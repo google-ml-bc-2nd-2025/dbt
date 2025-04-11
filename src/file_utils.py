@@ -91,7 +91,7 @@ def apply_animation(skin_model, anim_model, viewer_path, models_dir):
 
 def send_prompt(prompt_text):
     """
-    프롬프트를 localhost:3000으로 전송합니다.
+    프롬프트를 localhost:8000으로 전송합니다.
     
     Args:
         prompt_text: 사용자가 입력한 프롬프트 텍스트
@@ -113,8 +113,8 @@ def send_prompt(prompt_text):
             const promptText = {repr(prompt_text)};
             console.log('전송할 프롬프트:', promptText);
             
-            // localhost:3000으로 POST 요청 전송
-            fetch('http://localhost:3000/prompt', {{
+            // localhost:8000으로 POST 요청 전송
+            fetch('http://localhost:8000/prompt', {{
                 method: 'POST',
                 headers: {{
                     'Content-Type': 'application/json',
@@ -136,7 +136,7 @@ def send_prompt(prompt_text):
                 console.error('프롬프트 전송 오류:', error);
                 document.getElementById('prompt-result').innerHTML = 
                     '<p style="color: red;">프롬프트 전송 실패: ' + error.message + '</p>' +
-                    '<p>서버가 실행 중인지 확인해주세요 (localhost:3000)</p>';
+                    '<p>서버가 실행 중인지 확인해주세요 (localhost:8000)</p>';
             }});
         }})();
     </script>
