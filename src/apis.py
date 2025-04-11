@@ -56,10 +56,13 @@ async def process_prompt(request: Request):
     data = await request.json()
     prompt = data.get("prompt", "")
     
-    # 프롬프트 처리 로직
+    # 여기서 send_prompt를 호출하지 않고 직접 처리
     try:
-        result = send_prompt(prompt)
-        return JSONResponse(content={"result": result})
+        # 프롬프트 처리 로직 (send_prompt의 내용을 여기로 옮김)
+        print(f"API 처리 - 프롬프트: {prompt}")
+        # 여기서 실제 프롬프트 처리 로직 구현
+        result = {"status": "success", "prompt": prompt, "message": "프롬프트가 처리되었습니다."}
+        return JSONResponse(content=result)
     except Exception as e:
         return JSONResponse(
             status_code=500,

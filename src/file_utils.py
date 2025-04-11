@@ -99,45 +99,58 @@ def send_prompt(prompt_text):
     Returns:
         HTML 문자열 (프롬프트 전송 결과 표시)
     """
+    import json
+    import requests
+    
     if not prompt_text.strip():
         return "프롬프트를 입력해주세요."
     
-    # JavaScript로 POST 요청을 보내는 HTML 반환
-    return f"""
-    <div id="prompt-result">
-        <p>프롬프트 전송 중...</p>
-    </div>
+    # 디버깅을 위한 로그 추가
+    print(f"send_prompt() 호출됨 - 프롬프트: {prompt_text}")
     
-    <script>
-        (function() {{
-            const promptText = {repr(prompt_text)};
-            console.log('전송할 프롬프트:', promptText);
-            
-            // localhost:8000으로 POST 요청 전송
-            fetch('http://localhost:8000/prompt', {{
-                method: 'POST',
-                headers: {{
-                    'Content-Type': 'application/json',
-                }},
-                body: JSON.stringify({{ prompt: promptText }}),
-            }})
-            .then(response => {{
-                if (!response.ok) {{
-                    throw new Error('서버 응답 오류: ' + response.status);
-                }}
-                return response.json();
-            }})
-            .then(data => {{
-                document.getElementById('prompt-result').innerHTML = 
-                    '<p style="color: green;">프롬프트 전송 성공!</p>' +
-                    '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
-            }})
-            .catch(error => {{
-                console.error('프롬프트 전송 오류:', error);
-                document.getElementById('prompt-result').innerHTML = 
-                    '<p style="color: red;">프롬프트 전송 실패: ' + error.message + '</p>' +
-                    '<p>서버가 실행 중인지 확인해주세요 (localhost:8000)</p>';
-            }});
-        }})();
-    </script>
-    """
+    # 단일 호출 보장을 위한 플래그 사용 (필요시)
+    # if hasattr(send_prompt, '_is_running') and send_prompt._is_running:
+    #     return "이전 요청이 처리 중입니다..."
+    # send_prompt._is_running = True
+    
+    try:
+        response = requests.post(
+            'http://localhost:8000/api/prompt',
+            headers={'Content-Type': 'application/json'},
+            data=json.dumps({'prompt': prompt_text}),
+            timeout=10
+        )
+        
+        # 실행 완료 후 플래그 해제 (필요시)
+        # send_prompt._is_running = False
+        
+        if response.status_code == 200:
+            result_data = response.json()
+            return f"""
+            <div id="prompt-result">
+                <p style="color: green;">프롬프트 전송 성공!</p>
+                <pre>{json.dumps(result_data, indent=2, ensure_ascii=False)}</pre>
+            </div>
+            """
+        else:
+            return f"""
+            <div id="prompt-result">
+                <p style="color: red;">프롬프트 전송 실패: 서버 응답 코드 {response.status_code}</p>
+                <p>{response.text}</p>
+            </div>
+            """
+    except requests.exceptions.ConnectionError:
+        # send_prompt._is_running = False  # 예외 발생 시에도 플래그 해제
+        return f"""
+        <div id="prompt-result">
+            <p style="color: red;">프롬프트 전송 실패: 서버 연결 오류</p>
+            <p>서버가 실행 중인지 확인해주세요 (localhost:8000)</p>
+        </div>
+        """
+    except Exception as e:
+        # send_prompt._is_running = False  # 예외 발생 시에도 플래그 해제
+        return f"""
+        <div id="prompt-result">
+            <p style="color: red;">프롬프트 전송 실패: {str(e)}</p>
+        </div>
+        """
