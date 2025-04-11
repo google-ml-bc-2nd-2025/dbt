@@ -298,7 +298,7 @@ def save_smpl_npy(pose, out_path, fps=30, trans=None, betas=None):
 
 # 사용 예시
 if __name__ == "__main__":
-    glb_path = "walking_back.glb"
+    glb_path = "/Users/jihyunlee/projects/ml_google_2nd_project/samples/glb/Walking Backwards.glb"
     
     # GLB에서 SMPL 포즈 데이터 추출 (이제 pygltflib 사용)
     pose, metadata = extract_smpl_pose_from_mixamo(glb_path)
