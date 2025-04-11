@@ -45,8 +45,8 @@ atexit.register(cleanup)
 
 # Gradio 인터페이스 생성
 with gr.Blocks(title="애니메이션 뷰어") as demo:
-    gr.Markdown("# GLB/BVH/SMPL 애니메이션 뷰어")
-    gr.Markdown("스킨이 있는 GLB 모델과 GLB/BVH/SMPL(.npy) 애니메이션을 결합하여 볼 수 있습니다.")
+    gr.Markdown("# AssetSmith - (애니메이션 뷰어)")
+    gr.Markdown("스킨이 있는 GLB 모델을 지정 후 원하는 애니메이션 데이터를 선택하세요.")
     
     with gr.Row():
         with gr.Column(scale=1):
@@ -73,18 +73,11 @@ with gr.Blocks(title="애니메이션 뷰어") as demo:
             4. 오른쪽 패널에서 애니메이션이 적용된 모델을 확인합니다.
             
             **참고**: 
-            - GLB 애니메이션: 두 모델의 리깅(뼈대) 구조가 동일해야 합니다.
-            - BVH 애니메이션: 본 이름이 비슷하면 자동으로 매핑을 시도합니다.
-            - SMPL NPY 애니메이션: SMPL 호환 모델에 적용됩니다.
+            - GLB 애니메이션: 두 모델의 리깅(뼈대) 구조가 동일해야 합니다. 즉시 확인 가능
+            - BVH 애니메이션: 본 이름이 비슷하면 자동으로 매핑을 시도합니다. 본만 래더링 됨.
+            - SMPL NPY 애니메이션: SMPL 호환 모델에 적용됩니다. 에러 발생하면 static/models에 생성된 anim_xx 파일을 선택 후 실행
             """)
             
-            # 템플릿 파일 정보 및 링크 추가
-            gr.Markdown(f"""
-            ## 템플릿 편집
-            - 템플릿 파일: `{TEMPLATE_PATH}`
-            - 템플릿을 편집한 후 애플리케이션을 재시작하면 변경사항이 적용됩니다.
-            """)
-        
         with gr.Column(scale=2):
             # 3D 모델 뷰어
             viewer = gr.HTML("""
@@ -161,24 +154,6 @@ with gr.Blocks(title="애니메이션 뷰어") as demo:
         inputs=prompt_input,
         outputs=prompt_result
     )
-
-    # 템플릿 새로고침 함수 추가
-    def refresh_template():
-        """템플릿 파일을 다시 로드하여 뷰어를 업데이트합니다."""
-        create_viewer_html(VIEWER_PATH)
-        return "템플릿이 새로고침되었습니다. 변경사항을 확인하려면 모델을 다시 로드하세요."
-    
-    # 템플릿 새로고침 버튼 추가
-    with gr.Row():
-        refresh_btn = gr.Button("템플릿 새로고침", variant="secondary")
-        refresh_result = gr.Text(label="새로고침 결과")
-    
-    refresh_btn.click(
-        fn=refresh_template,
-        inputs=[],
-        outputs=refresh_result
-    )
-
 # 웹 서버 실행
 if __name__ == "__main__":
     # FastAPI 서버를 별도 스레드에서 실행
