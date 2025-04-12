@@ -21,6 +21,170 @@ import base64
 
 from bone_mappings import SMPL_JOINT_NAMES, MIXAMO_TO_SMPL, find_matching_bones, get_smpl_joint_index
 
+def axis_angle_to_rotation_6d(pose_aa):  # (T, 72) or (T, 24, 3)
+    """
+    축-각도(axis-angle) 회전 표현을 6D 회전 표현으로 변환합니다.
+    
+    Args:
+        pose_aa: 축-각도 포즈 배열 (T, 72) 또는 (T, 24, 3)
+    
+    Returns:
+        6D 회전 표현 배열 (T, 22*6=132)
+    """
+    if len(pose_aa.shape) == 3:  # (T, 24, 3)
+        T, joints, _ = pose_aa.shape
+        pose_aa_reshaped = pose_aa.reshape(T, joints * 3)
+    else:  # (T, 72)
+        T = pose_aa.shape[0]
+        pose_aa_reshaped = pose_aa
+    
+    pose_6d = np.zeros((T, 22 * 6), dtype=np.float32)  # 첫 22개 관절만 사용
+
+    for t in range(T):
+        frame_aa = pose_aa_reshaped[t].reshape(24, 3)  # (24, 3)
+        frame_6d = []
+        for joint_idx in range(22):  # 첫 22개 관절만 사용
+            rotmat = R.from_rotvec(frame_aa[joint_idx]).as_matrix()  # (3, 3)
+            rot_6d = rotmat[:, :2].reshape(6)  # 앞 두 열 → (6,)
+            frame_6d.append(rot_6d)
+        pose_6d[t] = np.concatenate(frame_6d)
+
+    return pose_6d  # (T, 132)
+
+def rotation_6d_to_axis_angle(pose_6d):
+    """
+    6D 회전 표현을 축-각도 표현으로 변환합니다.
+    
+    Args:
+        pose_6d: 6D 포즈 배열 (T, 132)
+    
+    Returns:
+        축-각도 회전 표현 배열 (T, 72)
+    """
+    T = pose_6d.shape[0]
+    pose_aa = np.zeros((T, 24, 3), dtype=np.float32)  # 24개 관절 모두 (SMPL 호환성)
+    
+    for t in range(T):
+        for joint_idx in range(22):  # 6D 표현은 22개 관절만 있음
+            # 6D 회전 표현 추출 (각 관절당 6차원)
+            rot_6d = pose_6d[t, joint_idx*6:(joint_idx+1)*6].reshape(3, 2)
+            
+            # 첫 두 열 가져오기
+            col1 = rot_6d[:, 0]
+            col2 = rot_6d[:, 1]
+            
+            # 정규화
+            col1_normalized = col1 / (np.linalg.norm(col1) + 1e-8)
+            col2_normalized = col2 / (np.linalg.norm(col2) + 1e-8)
+            
+            # Gram-Schmidt 과정으로 정규직교 벡터 생성
+            col2_orthogonal = col2_normalized - np.dot(col1_normalized, col2_normalized) * col1_normalized
+            col2_orthogonal = col2_orthogonal / (np.linalg.norm(col2_orthogonal) + 1e-8)
+            
+            # 세 번째 열은 외적으로 계산
+            col3 = np.cross(col1_normalized, col2_orthogonal)
+            
+            # 회전 행렬 구성
+            rotmat = np.column_stack([col1_normalized, col2_orthogonal, col3])
+            
+            # 회전 행렬을 축-각도로 변환
+            rot_aa = R.from_matrix(rotmat).as_rotvec()
+            pose_aa[t, joint_idx] = rot_aa
+    
+    # 추가 관절은 기본값 유지 (현재 0으로 설정)
+    return pose_aa.reshape(T, 72)  # (T, 72)
+
+def glb_to_6d_rotation(glb_file_path, output_path=None):
+    """
+    GLB 파일에서 애니메이션을 추출하고 6D 회전 표현으로 변환하여 NPZ 파일로 저장합니다.
+    
+    Args:
+        glb_file_path: GLB 파일 경로
+        output_path: 출력 NPZ 파일 경로 (None인 경우 입력 파일과 동일한 경로에 저장)
+    
+    Returns:
+        저장된 NPZ 파일 경로
+    """
+    import pygltflib
+    from pathlib import Path
+    
+    # 출력 경로가 지정되지 않은 경우 입력 파일과 같은 경로에 저장
+    if output_path is None:
+        output_path = Path(glb_file_path).with_suffix('.npz')
+    
+    # GLB 파일 로드
+    gltf = pygltflib.GLTF2().load(glb_file_path)
+    
+    # 애니메이션 데이터 추출
+    animations = []
+    poses_aa = []  # axis-angle 형태로 포즈 저장
+    
+    for anim in gltf.animations:
+        # 각 애니메이션 채널에서 데이터 추출
+        for channel in anim.channels:
+            target = channel.target
+            if target.path == "rotation":  # 회전 데이터만 처리
+                sampler = anim.samplers[channel.sampler]
+                
+                # 키프레임 시간 데이터
+                time_accessor = gltf.accessors[sampler.input]
+                time_buffer_view = gltf.bufferViews[time_accessor.bufferView]
+                time_buffer = gltf.buffers[time_buffer_view.buffer]
+                time_data = np.frombuffer(
+                    time_buffer.data[time_buffer_view.byteOffset:time_buffer_view.byteOffset + time_buffer_view.byteLength],
+                    dtype=np.float32
+                )
+                
+                # 회전 데이터 (쿼터니언)
+                rotation_accessor = gltf.accessors[sampler.output]
+                rotation_buffer_view = gltf.bufferViews[rotation_accessor.bufferView]
+                rotation_buffer = gltf.buffers[rotation_buffer_view.buffer]
+                rotation_data = np.frombuffer(
+                    rotation_buffer.data[rotation_buffer_view.byteOffset:rotation_buffer_view.byteOffset + rotation_buffer_view.byteLength],
+                    dtype=np.float32
+                ).reshape(-1, 4)  # 쿼터니언 [x, y, z, w]
+                
+                # 쿼터니언을 axis-angle로 변환
+                rotations = R.from_quat(rotation_data)
+                axis_angles = rotations.as_rotvec()  # (frames, 3)
+                
+                # joint_id와 프레임별 회전 정보 저장
+                joint_id = target.node
+                poses_aa.append({
+                    'joint_id': joint_id,
+                    'times': time_data,
+                    'rotations': axis_angles
+                })
+    
+    # 모든 관절의 회전 데이터를 프레임별로 통합
+    if poses_aa:
+        # 프레임 수 결정
+        max_frames = max(len(pose['times']) for pose in poses_aa)
+        
+        # 모든 관절의 회전을 저장할 배열 (frames, joints, 3)
+        all_poses_aa = np.zeros((max_frames, 24, 3), dtype=np.float32)
+        
+        # 각 관절의 회전 데이터 할당
+        for pose in poses_aa:
+            joint_id = pose['joint_id']
+            if joint_id < 24:  # SMPL 모델은 일반적으로 24개의 관절을 가짐
+                all_poses_aa[:len(pose['times']), joint_id] = pose['rotations']
+        
+        # axis-angle에서 6D 회전 표현으로 변환
+        all_poses_6d = axis_angle_to_rotation_6d(all_poses_aa)
+        
+        # NPZ 파일로 저장
+        np.savez(
+            output_path,
+            poses_6d=all_poses_6d,  # 6D 회전 표현 (T, 132)
+            poses_aa=all_poses_aa.reshape(max_frames, -1),  # 원본 axis-angle (T, 72) (호환성)
+            frame_count=max_frames
+        )
+        
+        return output_path
+    
+    return None
+
 class SMPLAnimationLoader:
     """SMPL 애니메이션 데이터를 로드하고 GLB 모델에 적용하는 클래스"""
     
@@ -29,10 +193,12 @@ class SMPLAnimationLoader:
         SMPL 애니메이션 로더 초기화
         
         Args:
-            smpl_params_file: SMPL 애니메이션 파라미터가 저장된 JSON 파일 경로
+            smpl_params_file: SMPL 애니메이션 파라미터가 저장된 JSON 또는 NPZ 파일 경로
         """
         self.fps = 30  # 기본 프레임 레이트
         self.animation_data = None
+        self.use_6d_rotation = False  # 6D 회전 표현 사용 여부
+        self.poses_6d = None  # 6D 회전 표현 데이터
         
         if smpl_params_file:
             self.load_animation(smpl_params_file)
@@ -42,7 +208,7 @@ class SMPLAnimationLoader:
         SMPL 애니메이션 파일 로드
         
         Args:
-            filepath: JSON 또는 NPY 파일 경로
+            filepath: JSON, NPY 또는 NPZ 파일 경로
         
         Returns:
             성공 여부 (bool)
@@ -58,11 +224,13 @@ class SMPLAnimationLoader:
                     if 'fps' in self.animation_data:
                         self.fps = self.animation_data['fps']
                     
+                    # axis-angle 형식으로 로드
+                    self.use_6d_rotation = False
                     print(f"JSON 애니메이션 로드 성공: {len(self.animation_data['poses'])} 프레임")
                     return True
                     
             elif ext == '.npy':
-                poses = np.load(filepath)
+                poses = np.load(filepath, allow_pickle=True)
                 
                 # NPY 파일은 포즈 데이터만 포함하므로 나머지 필드는 기본값으로 설정
                 self.animation_data = {
@@ -72,8 +240,65 @@ class SMPLAnimationLoader:
                     'fps': self.fps
                 }
                 
+                # 기본적으로 axis-angle 형식으로 간주
+                self.use_6d_rotation = False
                 print(f"NPY 애니메이션 로드 성공: {len(self.animation_data['poses'])} 프레임")
                 return True
+            
+            elif ext == '.npz':
+                npz_data = np.load(filepath, allow_pickle=True)
+                
+                if 'poses_6d' in npz_data:
+                    # 6D 회전 표현이 있는 경우
+                    self.poses_6d = npz_data['poses_6d']
+                    self.use_6d_rotation = True
+                    
+                    # axis-angle 형식이 있으면 함께 로드 (역호환성)
+                    if 'poses_aa' in npz_data:
+                        poses_aa = npz_data['poses_aa']
+                        self.animation_data = {
+                            'poses': poses_aa.tolist() if isinstance(poses_aa, np.ndarray) else poses_aa,
+                            'shape': [0.0] * 10,
+                            'trans': [[0.0, 0.0, 0.0] for _ in range(len(poses_aa))],
+                            'fps': npz_data.get('fps', self.fps)
+                        }
+                    else:
+                        # 6D 표현을 axis-angle로 변환하여 호환성 유지
+                        poses_aa = rotation_6d_to_axis_angle(self.poses_6d)
+                        self.animation_data = {
+                            'poses': poses_aa.tolist(),
+                            'shape': [0.0] * 10,
+                            'trans': [[0.0, 0.0, 0.0] for _ in range(len(poses_aa))],
+                            'fps': npz_data.get('fps', self.fps)
+                        }
+                    
+                    frame_count = npz_data.get('frame_count', len(self.poses_6d))
+                    print(f"NPZ 애니메이션 로드 성공 (6D 회전 표현): {frame_count} 프레임")
+                    return True
+                
+                elif 'poses' in npz_data or 'poses_aa' in npz_data:
+                    # 기존 형식의 NPZ 파일 (축-각도 표현)
+                    poses = npz_data.get('poses', npz_data.get('poses_aa', None))
+                    
+                    if poses is not None:
+                        self.animation_data = {
+                            'poses': poses.tolist() if isinstance(poses, np.ndarray) else poses,
+                            'shape': npz_data.get('shape', [0.0] * 10),
+                            'trans': npz_data.get('trans', [[0.0, 0.0, 0.0] for _ in range(len(poses))]),
+                            'fps': npz_data.get('fps', self.fps)
+                        }
+                        
+                        # 로드된 포즈를 6D 표현으로 변환
+                        poses_array = np.array(poses)
+                        self.poses_6d = axis_angle_to_rotation_6d(poses_array)
+                        self.use_6d_rotation = True
+                        
+                        print(f"NPZ 애니메이션 로드 성공 (축-각도에서 변환): {len(poses)} 프레임")
+                        return True
+                
+                else:
+                    print(f"NPZ 파일에 필요한 포즈 데이터가 없습니다.")
+                    return False
                 
             else:
                 print(f"지원되지 않는 파일 형식: {ext}")
@@ -98,17 +323,37 @@ class SMPLAnimationLoader:
         
         joint_rotations = {joint_name: [] for joint_name in SMPL_JOINT_NAMES}
         
-        # 각 프레임마다 관절 회전 데이터 추출
-        for frame_pose in self.animation_data['poses']:
-            # 프레임의 모든 관절에 대해 처리
-            for joint_idx, joint_name in enumerate(SMPL_JOINT_NAMES):
-                # 관절별 3차원 회전 벡터 추출
-                rot_start = joint_idx * 3
-                rot_end = rot_start + 3
+        # 6D 회전 표현을 사용하는 경우
+        if self.use_6d_rotation and self.poses_6d is not None:
+            # 6D 회전 표현을 축-각도로 변환
+            poses_aa = rotation_6d_to_axis_angle(self.poses_6d)
+            
+            # 각 프레임마다 관절 회전 데이터 추출
+            for frame_idx in range(poses_aa.shape[0]):
+                frame_pose = poses_aa[frame_idx]  # (72,) 형태
                 
-                if rot_end <= len(frame_pose):
-                    rotation = frame_pose[rot_start:rot_end]
-                    joint_rotations[joint_name].append(rotation)
+                # 프레임의 모든 관절에 대해 처리
+                for joint_idx, joint_name in enumerate(SMPL_JOINT_NAMES):
+                    if joint_idx < 22:  # 6D 회전은 22개 관절까지만 사용
+                        # 관절별 3차원 회전 벡터 추출
+                        rot_start = joint_idx * 3
+                        rot_end = rot_start + 3
+                        
+                        if rot_end <= len(frame_pose):
+                            rotation = frame_pose[rot_start:rot_end]
+                            joint_rotations[joint_name].append(rotation.tolist())
+        else:
+            # 기존 코드 유지 (axis-angle 형식 처리)
+            for frame_pose in self.animation_data['poses']:
+                # 프레임의 모든 관절에 대해 처리
+                for joint_idx, joint_name in enumerate(SMPL_JOINT_NAMES):
+                    # 관절별 3차원 회전 벡터 추출
+                    rot_start = joint_idx * 3
+                    rot_end = rot_start + 3
+                    
+                    if rot_end <= len(frame_pose):
+                        rotation = frame_pose[rot_start:rot_end]
+                        joint_rotations[joint_name].append(rotation)
         
         return joint_rotations
     
