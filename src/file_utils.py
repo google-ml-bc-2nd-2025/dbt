@@ -102,6 +102,9 @@ def send_prompt(prompt_text):
     import json
     import requests
     
+    import json
+    import requests
+    
     if not prompt_text.strip():
         return "프롬프트를 입력해주세요."
     
@@ -149,6 +152,45 @@ def send_prompt(prompt_text):
         """
     except Exception as e:
         # send_prompt._is_running = False  # 예외 발생 시에도 플래그 해제
+        return f"""
+        <div id="prompt-result">
+            <p style="color: red;">프롬프트 전송 실패: {str(e)}</p>
+        </div>
+        """
+    print(f"send prompt() 호출됨 - 프롬프트: {prompt_text}")
+    
+    # Python에서 직접 API 호출 수행
+    try:
+        response = requests.post(
+            'http://localhost:8000/api/prompt',
+            headers={'Content-Type': 'application/json'},
+            data=json.dumps({'prompt': prompt_text}),
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            result_data = response.json()
+            return f"""
+            <div id="prompt-result">
+                <p style="color: green;">프롬프트 전송 성공!</p>
+                <pre>{json.dumps(result_data, indent=2, ensure_ascii=False)}</pre>
+            </div>
+            """
+        else:
+            return f"""
+            <div id="prompt-result">
+                <p style="color: red;">프롬프트 전송 실패: 서버 응답 코드 {response.status_code}</p>
+                <p>{response.text}</p>
+            </div>
+            """
+    except requests.exceptions.ConnectionError:
+        return f"""
+        <div id="prompt-result">
+            <p style="color: red;">프롬프트 전송 실패: 서버 연결 오류</p>
+            <p>서버가 실행 중인지 확인해주세요 (localhost:8000)</p>
+        </div>
+        """
+    except Exception as e:
         return f"""
         <div id="prompt-result">
             <p style="color: red;">프롬프트 전송 실패: {str(e)}</p>
