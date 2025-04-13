@@ -3,6 +3,16 @@ import numpy as np
 import trimesh
 import pygltflib
 from scipy.spatial.transform import Rotation as R
+from scipy.interpolate import interp1d
+import re
+import glob
+
+
+'''
+    mixamo glb 파일에서 SMPL 포즈 데이터 추출
+    
+'''
+
 
 # SMPL 본 순서
 SMPL_JOINT_NAMES = [
@@ -39,6 +49,7 @@ MIXAMO_TO_SMPL = {
     'LeftHandIndex1': 'left_hand',
     'RightHandIndex1': 'right_hand',
 }
+
 
 def axis_angle_to_rotation_6d(pose_aa):  # (T, 72) or (T, 24, 3)
     """
@@ -112,6 +123,45 @@ def rotation_6d_to_axis_angle(pose_6d):
     
     # 추가 관절은 기본값 유지 (현재 0으로 설정)
     return pose_aa.reshape(T, 72)  # (T, 72)
+
+import numpy as np
+from scipy.interpolate import interp1d
+
+def normalize_motion_duration(pose, trans, original_duration_sec, target_duration_sec=2.0, target_len=60):
+    """
+    pose: (T, D)
+    trans: (T, 3)
+    original_duration_sec: 애니메이션 실제 길이 (초)
+    target_duration_sec: 정규화할 기준 길이 (초)
+    target_len: 정규화할 프레임 수 (기본 60프레임 @30fps)
+    """
+
+    T = pose.shape[0]
+    original_times = np.linspace(0, original_duration_sec, T)
+    target_times = np.linspace(0, target_duration_sec, target_len)
+
+    if original_duration_sec > target_duration_sec:
+        # 2초보다 긴 경우 → 시간 축 기준으로 리샘플링 (축소)
+        interp_pose = interp1d(original_times, pose, axis=0, kind='linear')
+        interp_trans = interp1d(original_times, trans, axis=0, kind='linear')
+        pose_final = interp_pose(target_times)
+        trans_final = interp_trans(target_times)
+        mask = np.ones(target_len, dtype=np.uint8)  # 전부 유효
+    else:
+        # 2초보다 짧은 경우 → 시간 비율로 자르고 패딩
+        use_len = int(target_len * (original_duration_sec / target_duration_sec))
+        use_len = min(use_len, T)
+        pose_used = pose[:use_len]
+        trans_used = trans[:use_len]
+        pad_len = target_len - use_len
+        pad_pose = np.zeros((pad_len, pose.shape[1]), dtype=np.float32)
+        pad_trans = np.zeros((pad_len, trans.shape[1]), dtype=np.float32)
+        pose_final = np.concatenate([pose_used, pad_pose], axis=0)
+        trans_final = np.concatenate([trans_used, pad_trans], axis=0)
+        mask = np.array([1]*use_len + [0]*pad_len, dtype=np.uint8)
+
+    return pose_final, trans_final, mask
+
 
 def find_matching_bones(model_bone_names, mapping_dict):
     """
@@ -389,42 +439,155 @@ def save_smpl_npy(pose, out_path, fps=30, trans=None, betas=None, pose_6d=None):
     np.save(out_path, data)
     print(f"SMPL 데이터 저장 완료: {out_path}")
 
+def convert_glb_to_motionclip(glb_path, output_dir=None):
+    """
+    GLB 파일을 MotionClip 형식으로 변환합니다.
+    
+    Args:
+        glb_path: GLB 파일 경로
+        output_dir: 출력 디렉토리 (None이면 GLB 파일과 같은 디렉토리 사용)
+    
+    Returns:
+        성공 여부(bool)와 결과 파일 경로들(dict)
+    """
+    try:
+        # GLB에서 SMPL 포즈 데이터 추출
+        pose, pose_6d, metadata = extract_smpl_pose_from_mixamo(glb_path)
+        
+        if pose is None:
+            print(f"'{glb_path}' 파일의 포즈 데이터 추출 실패")
+            return False, {}
+        
+        # 파일 경로 및 이름 설정
+        base_dir = os.path.dirname(glb_path)
+        base_name = os.path.splitext(os.path.basename(glb_path))[0]
+        
+        # 출력 디렉토리 설정
+        if output_dir is None:
+            output_dir = base_dir
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # 파일 경로 생성
+        npy_path = os.path.join(output_dir, f"{base_name}_smpl.npy")
+        npz_path = os.path.join(output_dir, f"{base_name}_smpl.npz")
+        motionclip_path = os.path.join(output_dir, f"{base_name}_motionclip.npz")
+        
+        # 메타데이터 및 프레임 정보
+        frame_count = pose.shape[0]
+        fps = metadata.get('fps', 30) if metadata else 30
+        
+        # 중간 결과물 저장 (NPY 단일 배열)
+        # save_smpl_npy(pose, npy_path, fps=fps, pose_6d=pose_6d)
+        
+        # NPZ 형식으로도 저장 (여러 배열)
+        # save_smpl_npz(pose, npz_path, fps=fps, pose_6d=pose_6d)
+        
+        # 기본 위치 정보 및 체형 파라미터 생성
+        trans = np.zeros((frame_count, 3), dtype=np.float32)
+        betas = np.zeros(10, dtype=np.float32)
+        
+        # 텍스트 설명 파일 찾기 (파일명과 같은 이름의 txt 파일)
+        txt_filename = f"{base_name}.txt"
+        txt_path = os.path.join(base_dir, txt_filename)
+        
+        # 설명 텍스트 설정
+        description = base_name  # 기본값
+        if os.path.exists(txt_path):
+            try:
+                with open(txt_path, 'r', encoding='utf-8') as f:
+                    description = f.read().strip()
+                    if not description:  # 빈 파일인 경우
+                        description = base_name
+            except Exception as e:
+                print(f"텍스트 파일 읽기 오류: {e}")
+        
+        # 설명 텍스트 정리 (공백, 대시, 밑줄 등을 단일 공백으로 변경)
+        description = ' '.join([word.strip() for word in re.split(r'[,\s\-_]', description) if word.strip()])
+        
+        # 30fps, 2초, 60 프레임으로 데이터 보정. 
+        # pose_6d,trans, padding_mask = normalize_motion_duration(pose_6d, trans, 
+        #     metadata['duration'], target_duration_sec=2.0, target_len=60)
+        # 학습 시 padding_mastk를 사용하여 패딩된 프레임을 무시하도록 설정
+
+        # MotionClip 형식으로 저장
+        np.savez(
+            motionclip_path,
+            pose=pose_6d,       # 6D 회전 데이터를 'pose'로 저장 (MotionClip 형식)
+            trans=trans,        # 위치 정보
+            betas=betas,        # 체형 파라미터
+            text=np.array([description], dtype=object)  # 텍스트 설명
+        )
+        
+        print(f"변환 완료: {os.path.basename(glb_path)}")
+        print(f"  - 프레임: {frame_count}, FPS: {fps:.2f}")
+        print(f"  - 설명: '{description}'")
+        
+        return True, {
+            'npy': npy_path,
+            'npz': npz_path,
+            'motionclip': motionclip_path
+        }
+    
+    except Exception as e:
+        print(f"'{os.path.basename(glb_path)}' 변환 중 오류 발생: {e}")
+        import traceback
+        traceback.print_exc()
+        return False, {}
+
 # 사용 예시
 if __name__ == "__main__":
-    glb_path = "/Users/jihyunlee/projects/ml_google_2nd_project/samples/glb/Walking Backwards.glb"
+    import sys
+    import time
     
-    # GLB에서 SMPL 포즈 데이터 추출 (이제 pygltflib 사용)
-    pose, pose_6d, metadata = extract_smpl_pose_from_mixamo(glb_path)
+    # 명령줄 인자 처리
+    if len(sys.argv) > 1:
+        input_path = sys.argv[1]
+    else:
+        # 기본 경로
+        input_path = "/Users/jihyunlee/projects/ml_google_2nd_project/samples/glb/"
     
-    if pose is None:
-        print("포즈 데이터 추출 실패")
-        exit(1)
+    # 출력 디렉토리 설정 (옵션)
+    output_dir = None
+    if len(sys.argv) > 2:
+        output_dir = sys.argv[2]
     
-    # 메타데이터 출력
-    print(f"메타데이터: {metadata}")
+    # 입력이 디렉토리인지 파일인지 확인
+    if os.path.isdir(input_path):
+        # 디렉토리 내의 모든 GLB 파일 처리
+        glb_files = glob.glob(os.path.join(input_path, "*.glb"))
+        print(f"'{input_path}' 디렉토리에서 {len(glb_files)}개의 GLB 파일을 찾았습니다.")
+        
+        success_count = 0
+        start_time = time.time()
+        
+        for i, glb_file in enumerate(glb_files):
+            print(f"\n[{i+1}/{len(glb_files)}] 처리 중: {os.path.basename(glb_file)}")
+            success, _ = convert_glb_to_motionclip(glb_file, output_dir)
+            if success:
+                success_count += 1
+        
+        end_time = time.time()
+        duration = end_time - start_time
+        
+        print(f"\n처리 완료: 총 {len(glb_files)}개 중 {success_count}개 변환 성공 ({duration:.1f}초 소요)")
+        if success_count < len(glb_files):
+            print(f"  - {len(glb_files) - success_count}개 파일 변환 실패")
     
-    # 추출된 포즈 확인
-    frame_count = pose.shape[0]
-    print(f"추출된 프레임 수: {frame_count}")
-    print(f"축-각도 포즈 데이터 형태: {pose.shape}")
-    print(f"6D 회전 포즈 데이터 형태: {pose_6d.shape}")
+    elif os.path.isfile(input_path) and input_path.lower().endswith('.glb'):
+        # 단일 GLB 파일 처리
+        print(f"단일 GLB 파일 변환 시작: {input_path}")
+        success, results = convert_glb_to_motionclip(input_path, output_dir)
+        
+        if success:
+            print(f"\n변환 성공!")
+            print(f"생성된 파일:")
+            print(f"  - NPY: {results['npy']}")
+            print(f"  - NPZ: {results['npz']}")
+            print(f"  - MotionClip: {results['motionclip']}")
+        else:
+            print("\n변환 실패!")
     
-    # 가져온 FPS 정보 사용
-    fps = metadata.get('fps', 30) if metadata else 30
-    
-    # 중간 결과물 저장 (NPY 단일 배열)
-    base_name = os.path.splitext(os.path.basename(glb_path))[0]
-    npy_path = f"{base_name}_smpl.npy"
-    save_smpl_npy(pose, npy_path, fps=fps, pose_6d=pose_6d)
-    
-    # NPZ 형식으로도 저장 (여러 배열)
-    npz_path = f"{base_name}_smpl.npz"
-    save_smpl_npz(pose, npz_path, fps=fps, pose_6d=pose_6d)
-    
-    # MotionClip 학습용 6D 전용 파일 저장
-    npz_6d_path = f"{base_name}_smpl_6d.npz"
-    np.savez(npz_6d_path, poses_6d=pose_6d, fps=fps, frame_count=frame_count)
-    
-    print(f"변환 완료: {glb_path} → {npy_path}, {npz_path}, {npz_6d_path}")
-    print(f"총 {frame_count} 프레임, FPS: {fps:.2f}")
-    print(f"6D 회전 데이터 포함하여 저장 완료 (MotionClip 학습 가능)")
+    else:
+        print(f"오류: '{input_path}'는 유효한 GLB 파일 또는 디렉토리가 아닙니다.")
+        print("사용법: python convert_mixamo_glb_to_smpl.py [GLB파일 또는 디렉토리] [출력디렉토리(선택)]")
+        sys.exit(1)
