@@ -16,9 +16,9 @@ def create_dataset_tab(MODELS_DIR):
             with gr.Column(scale=1):
                 # 데이터셋 생성 옵션
                 source_files = gr.File(
-                    label="소스 애니메이션 파일 (GLB/BVH/FBX)",
-                    file_types=[".glb", ".bvh", ".fbx"],
-                    type="file",
+                    label="소스 애니메이션 파일 (GLB/BVH/NPY)",
+                    file_types=[".glb", ".bvh", ".npy"],
+                    type="filepath",
                     file_count="multiple"
                 )
                 
@@ -49,7 +49,7 @@ def create_dataset_tab(MODELS_DIR):
                 
                 gr.Markdown("""
                 ## 데이터셋 생성 방법
-                1. 하나 이상의 애니메이션 파일(GLB, BVH 또는 FBX)을 업로드합니다.
+                1. 하나 이상의 애니메이션 파일(GLB, BVH 또는 NPY)을 업로드합니다.
                 2. 데이터셋 이름과 설정을 지정합니다.
                 3. '데이터셋 생성' 버튼을 클릭합니다.
                 4. 생성된 데이터셋은 오른쪽에 결과가 표시됩니다.
@@ -99,7 +99,7 @@ def create_dataset_tab(MODELS_DIR):
             # (현재는 예시로 표시)
             
             # 파일 형식별 카운팅
-            file_types = {"glb": 0, "bvh": 0, "fbx": 0}
+            file_types = {"glb": 0, "bvh": 0, "npy": 0}
             for f in files:
                 ext = Path(f.name).suffix.lower()[1:]  # .을 제외한 확장자
                 if ext in file_types:

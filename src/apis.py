@@ -1,9 +1,9 @@
 """
-3D 모델 뷰어 API 서버 모듈
+API 서버 모듈
 FastAPI 기반의 RESTful API를 제공합니다.
 """
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -11,6 +11,11 @@ from pathlib import Path
 import asyncio
 import uvicorn
 import os
+from celery.result import AsyncResult
+
+# Celery 설정 임포트
+from celery_config import celery_app
+from tasks import generate_animation
 
 # 사용자 정의 모듈 임포트
 from file_utils import send_prompt
@@ -56,18 +61,39 @@ async def process_prompt(request: Request):
     data = await request.json()
     prompt = data.get("prompt", "")
     
-    # 여기서 send_prompt를 호출하지 않고 직접 처리
-    try:
-        # 프롬프트 처리 로직 (send_prompt의 내용을 여기로 옮김)
-        print(f"API 처리 - 프롬프트: {prompt}")
-        # 여기서 실제 프롬프트 처리 로직 구현
-        result = {"status": "success", "prompt": prompt, "message": "프롬프트가 처리되었습니다."}
-        return JSONResponse(content=result)
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e)}
-        )
+    # Celery 태스크 실행
+    task = generate_animation.delay(prompt)
+    
+    return {
+        "task_id": task.id,
+        "status": "PENDING",
+        "message": "애니메이션 생성이 시작되었습니다."
+    }
+
+@app.get("/api/task/{task_id}")
+async def get_task_status(task_id: str):
+    """태스크 상태를 확인하는 API 엔드포인트"""
+    task_result = AsyncResult(task_id, app=celery_app)
+    
+    if task_result.ready():
+        if task_result.successful():
+            return {
+                "task_id": task_id,
+                "status": "SUCCESS",
+                "result": task_result.result
+            }
+        else:
+            return {
+                "task_id": task_id,
+                "status": "ERROR",
+                "error": str(task_result.result)
+            }
+    else:
+        return {
+            "task_id": task_id,
+            "status": task_result.state,
+            "message": task_result.info.get("status", "처리 중...")
+        }
 
 # 3D 모델 관련 API 엔드포인트
 @app.get("/api/models")

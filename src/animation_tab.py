@@ -19,13 +19,13 @@ def create_animation_tab(VIEWER_PATH, MODELS_DIR):
                 skin_model = gr.File(
                     label="스킨 모델 (GLB)",
                     file_types=[".glb"],
-                    type="file"
+                    type="filepath"
                 )
                 
                 anim_model = gr.File(
                     label="애니메이션 파일 (GLB/BVH/NPY)",
                     file_types=[".glb", ".bvh", ".npy"],
-                    type="file"
+                    type="filepath"
                 )
                 
                 apply_btn = gr.Button("적용 및 보기", variant="primary")

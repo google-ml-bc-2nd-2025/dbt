@@ -94,7 +94,7 @@ starlette==0.46.1
 sympy==1.13.1
 threadpoolctl==3.6.0
 tomlkit==0.12.0
-torch==2.6.0
+torch>=2.1.0
 tqdm==4.67.1
 traitlets==5.14.3
 trimesh==4.6.6
@@ -112,3 +112,7 @@ wheel==0.45.1
 wrapt==1.17.2
 yarl==1.19.0
 zipp==3.21.0
+pytest==8.1.1
+pytest-asyncio==0.23.5.post1
+google-generativeai==0.8.4
+transformers>=4.37.0
