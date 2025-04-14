@@ -13,6 +13,7 @@ from apis import start_api_server
 # 탭 모듈 임포트
 from animation_tab import create_animation_tab
 from dataset_tab import create_dataset_tab
+from edit_dataset_tab import create_edit_dataset_tab  # 새로운 탭 모듈 임포트
 
 # 정적 파일 디렉토리 생성
 STATIC_DIR = Path(__file__).parent / "static"
@@ -51,7 +52,10 @@ with gr.Blocks(title="AssetSmith") as demo:
         with gr.TabItem("애니메이션 생성"):
             create_animation_tab(VIEWER_PATH, MODELS_DIR)
             
-        with gr.TabItem("애니메이션 훈련 데이터셋 생성"):
+        with gr.TabItem("애니메이션 학습 데이터셋 생성"):
+            create_edit_dataset_tab(MODELS_DIR)
+        
+        with gr.TabItem("학습 데이터 수정"):  # 새로운 탭 추가
             create_dataset_tab(MODELS_DIR)
 
 # 웹 서버 실행

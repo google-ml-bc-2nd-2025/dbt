@@ -1,15 +1,22 @@
 """
-애니메이션 훈련 데이터셋 생성 탭 모듈
+애니메이션 학습 데이터셋 생성 탭 모듈
 """
 
 import gradio as gr
 import os
 from pathlib import Path
+import glob
+import numpy as np
 
 def create_dataset_tab(MODELS_DIR):
-    """애니메이션 훈련 데이터셋 생성 탭 인터페이스 생성"""
+    """
+    애니메이션 학습 데이터셋 생성 탭 인터페이스 생성
+    
+    Args:
+        MODELS_DIR: 모델 파일이 저장된 디렉토리 경로
+    """
     with gr.Column():
-        gr.Markdown("# 애니메이션 훈련 데이터셋 생성")
+        gr.Markdown("# 애니메이션 학습 데이터셋 생성")
         gr.Markdown("애니메이션 모델 학습에 필요한 데이터셋을 생성합니다.")
         
         with gr.Row():
@@ -77,9 +84,7 @@ def create_dataset_tab(MODELS_DIR):
         
         def generate_dataset(files, name, frames, rate):
             """
-            애니메이션 훈련 데이터셋 생성 함수
-            
-            참고: 이 함수는 실제로 구현되어야 함. 현재는 예시로만 표시
+            애니메이션 학습 데이터셋 생성 함수
             """
             if not files or len(files) == 0:
                 return (
@@ -95,59 +100,73 @@ def create_dataset_tab(MODELS_DIR):
                     {"상태": "오류", "원인": "파일이 없음"}
                 )
             
-            # 여기에 실제 데이터셋 생성 로직 구현
-            # (현재는 예시로 표시)
-            
-            # 파일 형식별 카운팅
-            file_types = {"glb": 0, "bvh": 0, "fbx": 0}
-            for f in files:
-                ext = Path(f.name).suffix.lower()[1:]  # .을 제외한 확장자
-                if ext in file_types:
-                    file_types[ext] += 1
-                    
-            # 가상의 데이터셋 생성 결과
-            output_dir = os.path.join(str(MODELS_DIR), "datasets", name)
-            num_files = len(files)
-            estimated_frames = num_files * 300  # 가정: 각 파일당 약 300프레임
-            estimated_clips = estimated_frames // frames
-            
-            # 파일 형식 정보 문자열 생성
-            file_type_info = ", ".join([f"{count}개의 {ext.upper()}" for ext, count in file_types.items() if count > 0])
-            
-            return (
-                f"""
-                <div style="width: 100%; height: 500px; background-color: #333; border-radius: 8px; padding: 20px; color: #fff; overflow-y: auto;">
-                    <h3>데이터셋 생성 완료</h3>
-                    <p>데이터셋이 생성되었습니다.</p>
-                    <div style="background-color: #444; padding: 15px; border-radius: 5px; margin-top: 15px;">
-                        <h4>데이터셋 정보</h4>
-                        <ul>
-                            <li><b>이름:</b> {name}</li>
-                            <li><b>경로:</b> {output_dir}</li>
-                            <li><b>파일 수:</b> {num_files} ({file_type_info})</li>
-                            <li><b>클립당 프레임:</b> {frames}</li>
-                            <li><b>프레임 레이트:</b> {rate} FPS</li>
-                        </ul>
+            try:
+                # 여기에 실제 데이터셋 생성 로직 구현
+                # (현재는 예시로 표시)
+                
+                # 파일 형식별 카운팅
+                file_types = {"glb": 0, "bvh": 0, "fbx": 0}
+                for f in files:
+                    ext = Path(f.name).suffix.lower()[1:]  # .을 제외한 확장자
+                    if ext in file_types:
+                        file_types[ext] += 1
+                        
+                # 가상의 데이터셋 생성 결과
+                output_dir = os.path.join(str(MODELS_DIR), "datasets", name)
+                num_files = len(files)
+                estimated_frames = num_files * 300  # 가정: 각 파일당 약 300프레임
+                estimated_clips = estimated_frames // frames
+                
+                # 파일 형식 정보 문자열 생성
+                file_type_info = ", ".join([f"{count}개의 {ext.upper()}" for ext, count in file_types.items() if count > 0])
+                
+                return (
+                    f"""
+                    <div style="width: 100%; height: 500px; background-color: #333; border-radius: 8px; padding: 20px; color: #fff; overflow-y: auto;">
+                        <h3>데이터셋 생성 완료</h3>
+                        <p>데이터셋이 생성되었습니다.</p>
+                        <div style="background-color: #444; padding: 15px; border-radius: 5px; margin-top: 15px;">
+                            <h4>데이터셋 정보</h4>
+                            <ul>
+                                <li><b>이름:</b> {name}</li>
+                                <li><b>경로:</b> {output_dir}</li>
+                                <li><b>파일 수:</b> {num_files} ({file_type_info})</li>
+                                <li><b>클립당 프레임:</b> {frames}</li>
+                                <li><b>프레임 레이트:</b> {rate} FPS</li>
+                            </ul>
+                        </div>
+                        <div style="background-color: #444; padding: 15px; border-radius: 5px; margin-top: 15px;">
+                            <h4>처리된 파일</h4>
+                            <ul>
+                                {"".join([f"<li>{Path(f.name).name} <small>({Path(f.name).suffix.lower()[1:].upper()})</small></li>" for f in files])}
+                            </ul>
+                        </div>
                     </div>
-                    <div style="background-color: #444; padding: 15px; border-radius: 5px; margin-top: 15px;">
-                        <h4>처리된 파일</h4>
-                        <ul>
-                            {"".join([f"<li>{Path(f.name).name} <small>({Path(f.name).suffix.lower()[1:].upper()})</small></li>" for f in files])}
-                        </ul>
+                    """,
+                    {
+                        "상태": "완료",
+                        "데이터셋 이름": name,
+                        "파일 수": num_files,
+                        "파일 형식": file_types,
+                        "총 프레임": estimated_frames,
+                        "클립 수": estimated_clips,
+                        "클립당 프레임": frames,
+                        "프레임 레이트": rate
+                    }
+                )
+            except Exception as e:
+                return (
+                    f"""
+                    <div style="width: 100%; height: 500px; background-color: #333; border-radius: 8px; 
+                            display: flex; justify-content: center; align-items: center; color: #ccc;">
+                        <div style="text-align: center;">
+                            <h3>오류</h3>
+                            <p>데이터셋 생성 중 오류가 발생했습니다: {str(e)}</p>
+                        </div>
                     </div>
-                </div>
-                """,
-                {
-                    "상태": "완료",
-                    "데이터셋 이름": name,
-                    "파일 수": num_files,
-                    "파일 형식": file_types,
-                    "총 프레임": estimated_frames,
-                    "클립 수": estimated_clips,
-                    "클립당 프레임": frames,
-                    "프레임 레이트": rate
-                }
-            )
+                    """, 
+                    {"상태": "오류", "원인": str(e)}
+                )
         
         # 버튼 클릭 이벤트 함수 등록
         generate_btn.click(
@@ -155,3 +174,9 @@ def create_dataset_tab(MODELS_DIR):
             inputs=[source_files, dataset_name, frames_per_clip, frame_rate],
             outputs=[dataset_output, dataset_stats]
         )
+
+# 단독 실행 시 테스트
+if __name__ == "__main__":
+    with gr.Blocks() as demo:
+        create_dataset_tab(".")
+    demo.launch()
