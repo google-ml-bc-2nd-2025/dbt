@@ -9,7 +9,6 @@ from pathlib import Path
 
 # 프로젝트 내 사용자 정의 모듈 임포트
 from viewer_template import create_viewer_html
-from apis import start_api_server
 # 탭 모듈 임포트
 from animation_tab import create_animation_tab
 from dataset_edit_tab import create_dataset_edit_tab
@@ -29,10 +28,6 @@ VIEWER_PATH = STATIC_DIR / "viewer.html"
 create_viewer_html(VIEWER_PATH)
 
 
-# FastAPI 서버 실행 (별도 스레드에서)
-def run_fastapi_server():
-    """별도 스레드에서 FastAPI 서버를 실행합니다."""
-    start_api_server(port=8000)
 
 # 서버 종료 관리 추가
 def cleanup():
@@ -61,12 +56,5 @@ with gr.Blocks(title="AssetSmith") as demo:
 
 # 웹 서버 실행
 if __name__ == "__main__":
-    # FastAPI 서버를 별도 스레드에서 실행
-    api_thread = threading.Thread(target=run_fastapi_server, daemon=True)
-    api_thread.start()
-    
-    print("FastAPI 서버가 백그라운드에서 시작되었습니다 (포트: 8000)")
-    print("API 문서: http://localhost:8000/docs")
-    
     # Gradio 인터페이스 실행
     demo.launch()
