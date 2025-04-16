@@ -14,7 +14,8 @@ from pathlib import Path
 import trimesh
 from trimesh.exchange.gltf import export_glb
 import json
-from model.mediapipe import mediapipe_bone_list, mp_landmarks_info
+from model.mediapipe import mediapipe_to_smpl_map, mp_landmarks_info
+from model.smpl import smpl_joint_names
 
 # 포즈 데이터를 SMPL 형식으로 변환
 def convert_to_smpl_format(pose_array):
@@ -42,55 +43,25 @@ def convert_to_smpl_format(pose_array):
     # SMPL은 24개 조인트를 사용하므로 매핑 필요
     smpl_data = np.zeros((pose_array.shape[0], 24, 3), dtype=np.float32)
     
-   
-    # MediaPipe에서 SMPL로의 올바른 매핑 (신체 부위 간 연관성 유지)
-    mp_to_smpl_mapping = {
-        # 중심 및 척추
-        23: 0,    # left_hip -> pelvis (왼쪽 골반 사용)
-        24: 0,    # right_hip -> pelvis (오른쪽 골반도 pelvis 계산에 사용)
-        0: 17,    # nose -> head (코는 머리에 매핑)
-        
-        # 골반 및 척추
-        23: 1,    # left_hip -> left_hip (왼쪽 골반)
-        24: 2,    # right_hip -> right_hip (오른쪽 골반)
-        
-        # 다리
-        25: 4,    # left_knee -> left_knee (왼쪽 무릎)
-        26: 5,    # right_knee -> right_knee (오른쪽 무릎)
-        27: 7,    # left_ankle -> left_ankle (왼쪽 발목)
-        28: 8,    # right_ankle -> right_ankle (오른쪽 발목)
-        31: 22,   # left_foot_index -> left_toe (왼쪽 발가락)
-        32: 23,   # right_foot_index -> right_toe (오른쪽 발가락)
-        
-        # 팔
-        11: 9,    # left_shoulder -> left_shoulder (왼쪽 어깨)
-        12: 10,   # right_shoulder -> right_shoulder (오른쪽 어깨)
-        13: 12,   # left_elbow -> left_elbow (왼쪽 팔꿈치) 
-        14: 13,   # right_elbow -> right_elbow (오른쪽 팔꿈치)
-        15: 15,   # left_wrist -> left_wrist (왼쪽 손목)
-        16: 16,   # right_wrist -> right_wrist (오른쪽 손목)
-        19: 18,   # left_index -> left_hand (왼손 검지를 왼손으로)
-        20: 19,   # right_index -> right_hand (오른손 검지를 오른손으로)
-    }
-    
+
     # 디버깅: MediaPipe -> SMPL 매핑 정보 출력
     print("\n===== MediaPipe -> SMPL 매핑 정보 =====")
     print(f"SMPL 관절 수: {len(smpl_joint_names)}")
     print("매핑된 관절:")
-    for mp_idx, smpl_idx in mp_to_smpl_mapping.items():
+    for mp_idx, smpl_idx in mediapipe_to_smpl_map.items():
         mp_name = mp_landmarks_info.get(mp_idx, f"Unknown_{mp_idx}")
         smpl_name = smpl_joint_names[smpl_idx]
         print(f"  MediaPipe {mp_idx} ({mp_name}) -> SMPL {smpl_idx} ({smpl_name})")
     
     # 매핑되지 않은 MediaPipe 랜드마크 출력
-    unmapped_mp = [idx for idx in range(min(33, pose_array.shape[1])) if idx not in mp_to_smpl_mapping]
+    unmapped_mp = [idx for idx in range(min(33, pose_array.shape[1])) if idx not in mediapipe_to_smpl_map]
     print("\n매핑되지 않은 MediaPipe 랜드마크:")
     for idx in unmapped_mp:
         mp_name = mp_landmarks_info.get(idx, f"Unknown_{idx}")
         print(f"  {idx}: {mp_name}")
     
     # 매핑되지 않은 SMPL 관절 출력
-    mapped_smpl = set(mp_to_smpl_mapping.values())
+    mapped_smpl = set(mediapipe_to_smpl_map.values())
     unmapped_smpl = [idx for idx in range(len(smpl_joint_names)) if idx not in mapped_smpl]
     print("\n매핑되지 않은 SMPL 관절 (보간 필요):")
     for idx in unmapped_smpl:
@@ -101,7 +72,7 @@ def convert_to_smpl_format(pose_array):
         frame_data = pose_array[frame]
         
         # 기본 매핑 적용 (직접 연결)
-        for mp_idx, smpl_idx in mp_to_smpl_mapping.items():
+        for mp_idx, smpl_idx in mediapipe_to_smpl_map.items():
             if mp_idx < pose_array.shape[1]:
                 # 왼쪽/오른쪽 골반의 경우 pelvis 위치 계산에 사용
                 if mp_idx in [23, 24] and smpl_idx == 0:

@@ -54,7 +54,7 @@ smpl_joint_names = [
 ]
 
 # MIXAMO to SMPL 관절 매핑 ( MIXAMO -> SMPL )
-mapping_mixamo_to_smpl_map = {
+mixamo_to_smpl_map = {
     "mixamorig:Hips": "pelvis",
     "mixamorig:LeftUpLeg": "left_hip",
     "mixamorig:RightUpLeg": "right_hip",
@@ -82,7 +82,7 @@ mapping_mixamo_to_smpl_map = {
 }
 
 # SMPL to MIXAMO 관절 매핑 (SMPL -> MIXAMO)
-mapping_smpl_to_mixamo_map = {
+smpl_to_mixamo_map = {
     "pelvis": "mixamorig:Hips",
     "left_hip": "mixamorig:LeftUpLeg",
     "right_hip": "mixamorig:RightUpLeg",
