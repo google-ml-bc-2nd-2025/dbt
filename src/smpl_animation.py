@@ -20,6 +20,7 @@ from io import BytesIO
 import base64
 
 from bone_mappings import SMPL_JOINT_NAMES, MIXAMO_TO_SMPL, find_matching_bones, get_smpl_joint_index
+from viewer_template import create_viewer_html
 
 def axis_angle_to_rotation_6d(pose_aa):  # (T, 72) or (T, 24, 3)
     """
@@ -868,9 +869,11 @@ def apply_to_glb(skin_model, anim_data, viewer_path, models_dir):
             else:
                 print(f"오류: 파일이 생성되지 않음: {result_path}")
             
-            # URL 생성
+            # URL 생성 (고정 템플릿 사용)
             glb_url = f"static/models/{result_filename}"
             print(f"GLB URL: {glb_url}")
+            
+            # 고정 템플릿 사용 (viewer_template.html 파일을 직접 참조)
             viewer_url = f"{viewer_path}?model={glb_url}"
             print(f"뷰어 URL: {viewer_url}")
             
@@ -923,7 +926,7 @@ def apply_to_glb(skin_model, anim_data, viewer_path, models_dir):
             # 스킨 모델만 복사
             shutil.copy2(skin_model.name, result_path)
             
-            # URL 생성 및 결과 반환
+            # URL 생성 및 결과 반환 (고정 템플릿 사용)
             glb_url = f"static/models/{result_filename}"
             viewer_url = f"{viewer_path}?model={glb_url}"
             
@@ -959,7 +962,7 @@ def apply_to_glb(skin_model, anim_data, viewer_path, models_dir):
             # 스킨 모델만 복사
             shutil.copy2(skin_model.name, result_path)
             
-            # URL 생성 및 결과 반환
+            # URL 생성 및 결과 반환 (고정 템플릿 사용)
             glb_url = f"static/models/{result_filename}"
             viewer_url = f"{viewer_path}?model={glb_url}"
             
@@ -1000,7 +1003,7 @@ def apply_to_glb(skin_model, anim_data, viewer_path, models_dir):
             print(f"오류: 최종 파일이 생성되지 않음: {result_path}")
             return "파일 생성 실패: 결과 파일을 찾을 수 없습니다."
         
-        # URL 생성
+        # URL 생성 (고정 템플릿 사용)
         glb_url = f"static/models/{result_filename}"
         print(f"최종 GLB URL: {glb_url}")
         viewer_url = f"{viewer_path}?model={glb_url}"
@@ -1067,7 +1070,7 @@ def apply_to_glb(skin_model, anim_data, viewer_path, models_dir):
             # 스킨 모델만 복사
             shutil.copy2(skin_model.name, result_path)
             
-            # URL 생성
+            # URL 생성 (고정 템플릿 사용)
             glb_url = f"static/models/{result_filename}"
             viewer_url = f"{viewer_path}?model={glb_url}"
             

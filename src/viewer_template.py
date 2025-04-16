@@ -1,9 +1,9 @@
 """
 3D 모델 뷰어 HTML 템플릿을 생성하는 모듈
 """
-import os
-import shutil
 from pathlib import Path
+import shutil
+import os
 
 def create_viewer_html(output_path):
     """
@@ -20,104 +20,385 @@ def create_viewer_html(output_path):
     
     # 템플릿 파일이 존재하지 않으면 생성
     if not template_path.exists():
-        # 템플릿 디렉토리 확인
-        template_path.parent.mkdir(exist_ok=True)
-        
-        # 초기 템플릿 생성 코드를 별도 함수로 분리
         create_initial_template(template_path)
     
     # 템플릿 파일을 출력 경로로 복사
+    output_dir = os.path.dirname(output_path)
+    os.makedirs(output_dir, exist_ok=True)
     shutil.copy2(template_path, output_path)
     
     return output_path
 
+
 def create_initial_template(template_path):
     """
-    템플릿 HTML 파일을 처음 생성하는 함수
+    기본 Three.js 3D 뷰어 템플릿 파일 생성
     
     Args:
-        template_path: 생성할 템플릿 파일 경로
+        template_path: 템플릿 파일 저장 경로
     """
-    with open(template_path, "w") as f:
-        f.write("""<!DOCTYPE html>
-<html>
+    # 상위 디렉토리가 없으면 생성
+    template_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # 기본 HTML 템플릿 내용
+    template_html = """<!DOCTYPE html>
+<html lang="ko">
 <head>
-    <meta charset="utf-8">
-    <title>애니메이션 뷰어</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 모델 뷰어</title>
     <style>
-        body { margin: 0; overflow: hidden; }
-        #container { width: 100%; height: 100vh; }
-        .info { 
-            position: absolute; 
-            top: 10px; 
-            left: 10px; 
-            background: rgba(0,0,0,0.7); 
-            color: white; 
-            padding: 10px; 
-            font-family: monospace;
-            border-radius: 5px;
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #222;
+            font-family: 'Arial', sans-serif;
         }
-        .loading {
+        canvas { 
+            width: 100%; 
+            height: 100%; 
+            display: block;
+        }
+        #info {
             position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
+            top: 10px;
+            left: 10px;
             color: white;
-            font-size: 18px;
-            background: rgba(0,0,0,0.7);
-            padding: 20px;
-            border-radius: 10px;
+            background-color: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 100;
         }
-        .error {
-            color: #ff4444;
-            font-weight: bold;
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: white;
+            background-color: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 100;
+        }
+        button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 14px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            color: #666666;
+            cursor: not-allowed;
+        }
+        #loading {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 200;
         }
     </style>
 </head>
 <body>
-    <div id="container"></div>
-    <div class="info">애니메이션 뷰어</div>
-    <div id="loading" class="loading">모델 로딩 중...</div>
-
-    <!-- 스크립트 호출 순서와 로드 방식 변경 -->
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js",
-            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/"
-        }
-    }
-    </script>
+    <div id="info">
+        <h3>3D 모델 뷰어</h3>
+        <div id="model-info">모델을 불러오는 중...</div>
+    </div>
+    
+    <div id="controls">
+        <button id="play-btn">재생</button>
+        <button id="pause-btn">일시정지</button>
+        <button id="reset-btn">리셋</button>
+    </div>
+    
+    <div id="loading">
+        <div style="text-align: center;">
+            <h3>3D 모델 로딩 중...</h3>
+            <p>잠시만 기다려주세요.</p>
+        </div>
+    </div>
     
     <script type="module">
-        import * as THREE from 'three';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { BVHLoader } from 'three/addons/loaders/BVHLoader.js';
+        import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
+        import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/controls/OrbitControls.js';
+        import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/loaders/GLTFLoader.js';
         
         // URL 파라미터 가져오기
         const urlParams = new URLSearchParams(window.location.search);
-        const skinModelUrl = urlParams.get('skin');
-        const animModelUrl = urlParams.get('anim');
-        const animType = urlParams.get('animType') || 'glb'; // 애니메이션 타입 (기본값: glb)
+        const modelPath = urlParams.get('model') || '';
         
-        // 디버깅을 위한 URL 출력
-        console.log('스킨 모델 URL:', skinModelUrl);
-        console.log('애니메이션 URL:', animModelUrl);
-        console.log('애니메이션 타입:', animType);
-
-        // 로딩 상태 업데이트 함수
-        function updateLoadingStatus(message, isError = false) {
-            const loadingElement = document.getElementById('loading');
-            loadingElement.innerHTML = message;
-            if (isError) {
-                loadingElement.classList.add('error');
-            } else {
-                loadingElement.classList.remove('error');
+        if (!modelPath) {
+            document.getElementById('model-info').textContent = '오류: 모델 경로가 지정되지 않았습니다.';
+            document.getElementById('loading').style.display = 'none';
+            throw new Error('모델 경로가 지정되지 않았습니다.');
+        }
+        
+        // Three.js 변수
+        let scene, camera, renderer, controls, mixer, clock;
+        let animations = [];
+        let currentAction = null;
+        let isPlaying = false;
+        
+        // 초기화 함수
+        function init() {
+            // 씬 생성
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x222222);
+            
+            // 카메라 설정
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 1.5, 3);
+            
+            // 렌더러 설정
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
+            
+            // 조명 설정
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(1, 2, 3);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 1024;
+            directionalLight.shadow.mapSize.height = 1024;
+            directionalLight.shadow.camera.near = 0.5;
+            directionalLight.shadow.camera.far = 50;
+            scene.add(directionalLight);
+            
+            // 바닥 그리드 추가
+            const gridHelper = new THREE.GridHelper(10, 10, 0x555555, 0x333333);
+            scene.add(gridHelper);
+            
+            // 바닥 평면 추가
+            const groundGeometry = new THREE.PlaneGeometry(10, 10);
+            const groundMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x333333, 
+                roughness: 0.8, 
+                metalness: 0.2,
+                side: THREE.DoubleSide
+            });
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            ground.position.y = -0.01;  // 그리드와 겹치지 않도록 약간 아래로
+            scene.add(ground);
+            
+            // 컨트롤 설정
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.minDistance = 1;
+            controls.maxDistance = 10;
+            controls.target.set(0, 1, 0);
+            
+            // 시간 측정 시작
+            clock = new THREE.Clock();
+            
+            // 모델 로드
+            loadModel();
+            
+            // 창 크기 변경 이벤트 처리
+            window.addEventListener('resize', onWindowResize);
+            
+            // 메시지 이벤트 리스너
+            window.addEventListener('message', onMessageReceived);
+            
+            // 버튼 이벤트 리스너
+            document.getElementById('play-btn').addEventListener('click', playAnimation);
+            document.getElementById('pause-btn').addEventListener('click', pauseAnimation);
+            document.getElementById('reset-btn').addEventListener('click', resetAnimation);
+        }
+        
+        // 창 크기 변경 처리
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        // iframe 부모로부터 메시지 수신
+        function onMessageReceived(event) {
+            if (event.data && event.data.action) {
+                switch (event.data.action) {
+                    case 'play':
+                        playAnimation();
+                        break;
+                    case 'pause':
+                        pauseAnimation();
+                        break;
+                    case 'reset':
+                        resetAnimation();
+                        break;
+                }
             }
         }
-
-        // ... 이하 생략 (HTML 파일 내용과 동일) ...
+        
+        // 모델 로드 함수
+        function loadModel() {
+            const loader = new GLTFLoader();
+            
+            loader.load(
+                modelPath,
+                function(gltf) {
+                    // 모델 처리
+                    const model = gltf.scene;
+                    
+                    // 모든 오브젝트에 그림자 설정
+                    model.traverse(function(node) {
+                        if (node.isMesh) {
+                            node.castShadow = true;
+                            node.receiveShadow = true;
+                        }
+                    });
+                    
+                    // 모델 스케일 및 위치 조정 (필요시)
+                    centerModel(model);
+                    
+                    // 씬에 추가
+                    scene.add(model);
+                    
+                    // 애니메이션 처리
+                    if (gltf.animations && gltf.animations.length > 0) {
+                        animations = gltf.animations;
+                        mixer = new THREE.AnimationMixer(model);
+                        
+                        // 기본 애니메이션 재생
+                        currentAction = mixer.clipAction(animations[0]);
+                        currentAction.play();
+                        isPlaying = true;
+                        
+                        // 애니메이션 정보 표시
+                        document.getElementById('model-info').innerHTML = `
+                            <p>모델: ${modelPath.split('/').pop()}</p>
+                            <p>애니메이션: ${animations.length}개</p>
+                            <p>현재 애니메이션: ${animations[0].name || '기본 애니메이션'}</p>
+                        `;
+                    } else {
+                        document.getElementById('model-info').innerHTML = `
+                            <p>모델: ${modelPath.split('/').pop()}</p>
+                            <p>애니메이션: 없음</p>
+                        `;
+                        
+                        // 애니메이션이 없으면 컨트롤 비활성화
+                        document.getElementById('play-btn').disabled = true;
+                        document.getElementById('pause-btn').disabled = true;
+                        document.getElementById('reset-btn').disabled = true;
+                    }
+                    
+                    // 로딩 화면 숨김
+                    document.getElementById('loading').style.display = 'none';
+                },
+                function(xhr) {
+                    // 로딩 진행률 표시
+                    const percent = (xhr.loaded / xhr.total * 100).toFixed(0);
+                    document.getElementById('loading').innerHTML = `
+                        <div style="text-align: center;">
+                            <h3>3D 모델 로딩 중: ${percent}%</h3>
+                            <p>잠시만 기다려주세요.</p>
+                        </div>
+                    `;
+                },
+                function(error) {
+                    console.error('모델 로드 오류:', error);
+                    document.getElementById('model-info').textContent = '오류: 모델을 불러올 수 없습니다.';
+                    document.getElementById('loading').style.display = 'none';
+                }
+            );
+        }
+        
+        // 모델을 중앙에 배치하는 함수
+        function centerModel(model) {
+            // 바운딩 박스 계산
+            const box = new THREE.Box3().setFromObject(model);
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
+            
+            // 바닥에 맞추기
+            const height = size.y;
+            model.position.y = height / 2;
+            
+            // 중앙으로 이동
+            model.position.x = -center.x;
+            model.position.z = -center.z;
+            
+            // 크기에 따라 카메라 조정
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const distance = maxDim * 2;
+            
+            camera.position.set(0, height, distance);
+            controls.target.set(0, height / 2, 0);
+            controls.update();
+        }
+        
+        // 애니메이션 제어 함수
+        function playAnimation() {
+            if (mixer && currentAction) {
+                currentAction.paused = false;
+                isPlaying = true;
+            }
+        }
+        
+        function pauseAnimation() {
+            if (mixer && currentAction) {
+                currentAction.paused = true;
+                isPlaying = false;
+            }
+        }
+        
+        function resetAnimation() {
+            if (mixer && currentAction) {
+                currentAction.reset();
+                currentAction.play();
+                isPlaying = true;
+            }
+        }
+        
+        // 애니메이션 루프
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // 컨트롤 업데이트
+            controls.update();
+            
+            // 애니메이션 업데이트
+            if (mixer && isPlaying) {
+                const delta = clock.getDelta();
+                mixer.update(delta);
+            }
+            
+            // 렌더링
+            renderer.render(scene, camera);
+        }
+        
+        // 초기화 및 애니메이션 시작
+        init();
+        animate();
     </script>
 </body>
-</html>""")
+</html>
+"""
+    
+    # 파일 저장
+    with open(template_path, "w", encoding="utf-8") as f:
+        f.write(template_html)

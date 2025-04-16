@@ -466,7 +466,10 @@
                         url,
                         function(gltf) {
                             console.log('GLB 애니메이션 로드 성공');
-                            
+
+                            console.log(gltf.animations, gltf.animations.length + '개 애니메이션');
+                            console.log(gltf)
+
                             // 애니메이션 추출
                             if (gltf.animations && gltf.animations.length > 0) {
                                 console.log(`GLB 애니메이션 ${gltf.animations.length}개 발견`);

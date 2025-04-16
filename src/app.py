@@ -12,8 +12,8 @@ from viewer_template import create_viewer_html
 from apis import start_api_server
 # 탭 모듈 임포트
 from animation_tab import create_animation_tab
-from dataset_tab import create_dataset_tab
-from edit_dataset_tab import create_edit_dataset_tab  # 새로운 탭 모듈 임포트
+from dataset_edit_tab import create_dataset_edit_tab
+from dataset_create_tab import create_dataset_create_tab  # 새로운 탭 모듈 임포트
 
 # 정적 파일 디렉토리 생성
 STATIC_DIR = Path(__file__).parent / "static"
@@ -27,6 +27,7 @@ TEMPLATE_PATH = STATIC_DIR / "viewer_template.html"
 # HTML 뷰어 파일 생성
 VIEWER_PATH = STATIC_DIR / "viewer.html"
 create_viewer_html(VIEWER_PATH)
+
 
 # FastAPI 서버 실행 (별도 스레드에서)
 def run_fastapi_server():
@@ -53,10 +54,10 @@ with gr.Blocks(title="AssetSmith") as demo:
             create_animation_tab(VIEWER_PATH, MODELS_DIR)
             
         with gr.TabItem("애니메이션 학습 데이터셋 생성"):
-            create_edit_dataset_tab(MODELS_DIR)
+            create_dataset_create_tab(MODELS_DIR)
         
         with gr.TabItem("학습 데이터 수정"):  # 새로운 탭 추가
-            create_dataset_tab(MODELS_DIR)
+            create_dataset_edit_tab(VIEWER_PATH, MODELS_DIR)
 
 # 웹 서버 실행
 if __name__ == "__main__":
