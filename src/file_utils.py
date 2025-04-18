@@ -6,10 +6,6 @@ import os
 import shutil
 import uuid
 from pathlib import Path
-import requests
-import json
-import time
-from typing import Dict, Any, Optional
 
 def save_model(file_obj, prefix, models_dir):
     """
@@ -93,83 +89,92 @@ def apply_animation(skin_model, anim_model, viewer_path, models_dir):
     </script>
     """
 
-def send_prompt(prompt: str) -> Dict[str, Any]:
+def send_prompt(prompt_text):
     """
-    프롬프트를 백엔드로 전송
+    프롬프트를 localhost:8000으로 전송합니다.
     
     Args:
-        prompt (str): 사용자 입력 프롬프트
-        
+        prompt_text: 사용자가 입력한 프롬프트 텍스트
+    
     Returns:
-        Dict[str, Any]: 응답 데이터
+        dict: API 응답 데이터
     """
+    import json
+    import requests
+    
+    if not prompt_text.strip():
+        return {
+            "status": "error",
+            "message": "프롬프트를 입력해주세요."
+        }
+    
     try:
         response = requests.post(
-            "http://localhost:8000/api/prompt",
-            json={"prompt": prompt},
+            'http://localhost:8000/api/prompt',
+            headers={'Content-Type': 'application/json'},
+            data=json.dumps({'prompt': prompt_text}),
             timeout=10
         )
-        response.raise_for_status()
-        return response.json()
         
-    except requests.exceptions.RequestException as e:
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {
+                "status": "error",
+                "message": f"서버 응답 오류: {response.status_code}",
+                "details": response.text
+            }
+            
+    except requests.exceptions.ConnectionError:
         return {
             "status": "error",
-            "message": f"백엔드 서버(localhost:8000)에 연결할 수 없습니다: {str(e)}"
+            "message": "서버 연결 오류",
+            "details": "서버가 실행 중인지 확인해주세요 (localhost:8000)"
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": "프롬프트 전송 실패",
+            "details": str(e)
         }
 
-def check_task_status(task_id: str) -> Dict[str, Any]:
+def poll_task_status(task_id, callback):
     """
-    작업 상태 확인
+    작업 상태를 주기적으로 확인하고 콜백 함수를 통해 결과를 전달합니다.
     
     Args:
-        task_id (str): 확인할 작업의 ID
-        
+        task_id: 확인할 작업의 ID
+        callback: 상태 업데이트를 처리할 콜백 함수
+    
     Returns:
-        Dict[str, Any]: 작업 상태 정보
+        None
     """
-    try:
-        response = requests.get(
-            f"http://localhost:8000/api/tasks/{task_id}",
-            timeout=10
-        )
-        response.raise_for_status()
-        return response.json()
-        
-    except requests.exceptions.RequestException as e:
-        return {
-            "status": "error",
-            "message": f"작업 상태 확인 중 오류 발생: {str(e)}"
-        }
-
-def poll_task_status(task_id: str, callback, interval: float = 1.0, timeout: float = 300.0) -> None:
-    """
-    작업 상태를 주기적으로 확인
-    
-    Args:
-        task_id (str): 확인할 작업의 ID
-        callback: 상태 업데이트 시 호출할 콜백 함수
-        interval (float): 확인 주기 (초)
-        timeout (float): 최대 대기 시간 (초)
-    """
-    start_time = time.time()
+    import time
+    import requests
     
     while True:
-        # 타임아웃 체크
-        if time.time() - start_time > timeout:
+        try:
+            response = requests.get(f'http://localhost:8000/api/tasks/{task_id}')
+            if response.status_code == 200:
+                status_data = response.json()
+                callback(status_data)
+                
+                # 작업이 완료되면 종료
+                if status_data.get('status') in ['completed', 'failed']:
+                    break
+            
+            # 1초 대기
+            time.sleep(1)
+            
+        except requests.exceptions.ConnectionError:
             callback({
-                "status": "error",
-                "message": "작업 시간이 초과되었습니다."
+                'status': 'error',
+                'message': '서버 연결 오류'
             })
             break
-            
-        # 상태 확인
-        status = check_task_status(task_id)
-        callback(status)
-        
-        # 작업 완료 또는 실패 시 종료
-        if status.get("status") in ["completed", "failed", "error"]:
+        except Exception as e:
+            callback({
+                'status': 'error',
+                'message': str(e)
+            })
             break
-            
-        # 대기
-        time.sleep(interval)
