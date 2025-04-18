@@ -15,7 +15,7 @@ import trimesh
 from trimesh.exchange.gltf import export_glb
 import json
 from model.mediapipe import mediapipe_to_smpl_map, mp_landmarks_info
-from model.smpl import smpl_joint_names
+from model.smpl import smpl_bone_list, joint_connections
 
 # 포즈 데이터를 SMPL 형식으로 변환
 def convert_to_smpl_format(pose_array):
@@ -40,17 +40,16 @@ def convert_to_smpl_format(pose_array):
             if idx < pose_array.shape[1]:
                 print(f"  {idx}: {name} - {pose_array[0, idx]}")
     
-    # SMPL은 24개 조인트를 사용하므로 매핑 필요
-    smpl_data = np.zeros((pose_array.shape[0], 24, 3), dtype=np.float32)
+    # SMPL은 24개(22개로 조정) 조인트를 사용하므로 매핑 필요
+    smpl_data = np.zeros((pose_array.shape[0], 22, 3), dtype=np.float32)
     
-
     # 디버깅: MediaPipe -> SMPL 매핑 정보 출력
     print("\n===== MediaPipe -> SMPL 매핑 정보 =====")
-    print(f"SMPL 관절 수: {len(smpl_joint_names)}")
+    print(f"SMPL 관절 수: {len(smpl_bone_list)}")
     print("매핑된 관절:")
     for mp_idx, smpl_idx in mediapipe_to_smpl_map.items():
         mp_name = mp_landmarks_info.get(mp_idx, f"Unknown_{mp_idx}")
-        smpl_name = smpl_joint_names[smpl_idx]
+        smpl_name = smpl_bone_list[smpl_idx]
         print(f"  MediaPipe {mp_idx} ({mp_name}) -> SMPL {smpl_idx} ({smpl_name})")
     
     # 매핑되지 않은 MediaPipe 랜드마크 출력
@@ -62,10 +61,10 @@ def convert_to_smpl_format(pose_array):
     
     # 매핑되지 않은 SMPL 관절 출력
     mapped_smpl = set(mediapipe_to_smpl_map.values())
-    unmapped_smpl = [idx for idx in range(len(smpl_joint_names)) if idx not in mapped_smpl]
+    unmapped_smpl = [idx for idx in range(len(smpl_bone_list)) if idx not in mapped_smpl]
     print("\n매핑되지 않은 SMPL 관절 (보간 필요):")
     for idx in unmapped_smpl:
-        print(f"  {idx}: {smpl_joint_names[idx]}")
+        print(f"  {idx}: {smpl_bone_list[idx]}")
     
     # 프레임별 처리
     for frame in range(pose_array.shape[0]):
@@ -118,8 +117,35 @@ def convert_to_smpl_format(pose_array):
     # 디버깅: 첫 프레임의 SMPL 관절 위치 출력
     if pose_array.shape[0] > 0:
         print("\n첫 번째 프레임의 SMPL 관절 위치:")
-        for i, name in enumerate(smpl_joint_names):
+        for i, name in enumerate(smpl_bone_list):
             print(f"  {i}: {name} - {smpl_data[0, i]}")
+            # [0, 0, 0] 값 확인 및 처리
+            if np.array_equal(smpl_data[0, i], np.zeros(3)):
+                print(f"    ⚠️ 관절 {i} ({name})의 위치가 [0, 0, 0]입니다. 보간이 필요합니다.")
+                
+                # 관절 계층 구조에 따른 보간 로직
+                # 본 연결 정보를 가져와서 이 관절과 연결된 부모/자식 관절 파악
+                connected_joints = []
+                for start_idx, end_idx in joint_connections:
+                    if start_idx == i:
+                        connected_joints.append(end_idx)  # 자식 관절
+                    elif end_idx == i:
+                        connected_joints.append(start_idx)  # 부모 관절
+                
+                # 연결된 관절 중 유효한 값을 가진 관절 찾기
+                valid_connected = []
+                for j in connected_joints:
+                    if j < smpl_data.shape[1] and not np.array_equal(smpl_data[0, j], np.zeros(3)):
+                        valid_connected.append((j, smpl_data[0, j]))
+                
+                # 연결된 관절이 있으면 보간
+                if valid_connected:
+                    # 간단한 보간: 연결된 모든 관절의 평균 위치를 사용
+                    avg_pos = np.mean([pos for _, pos in valid_connected], axis=0)
+                    smpl_data[0, i] = avg_pos
+                    print(f"    ✓ 관절 {i}를 연결된 관절 위치의 평균으로 보간했습니다: {avg_pos}")
+                else:
+                    print(f"    ❌ 연결된 유효한 관절이 없어 보간할 수 없습니다.")
     
     print("\nSMPL 변환 완료")
     return smpl_data
@@ -140,64 +166,16 @@ def convert_smpl_to_glb(smpl_pose_array, output_path):
     print(f"SMPL 포즈 배열 크기: {smpl_pose_array.shape}")
     print(f"프레임 수: {smpl_pose_array.shape[0]}")
     print(f"관절 수: {smpl_pose_array.shape[1]}")
-    
-    # SMPL 관절 이름 (참고용)
-    smpl_joint_names = [
-        "pelvis", "left_hip", "right_hip", "spine1", 
-        "left_knee", "right_knee", "spine2", 
-        "left_ankle", "right_ankle", "left_shoulder", 
-        "right_shoulder", "spine3", "left_elbow", 
-        "right_elbow", "neck", "left_wrist", 
-        "right_wrist", "head", "left_hand", 
-        "right_hand", "left_foot", "right_foot", 
-        "left_toe", "right_toe"
-    ]
-    
+        
     # Create a simple skeleton mesh from the SMPL data
     vertices = []
     faces = []
     
-    # 관절 연결을 올바른 계층 구조로 수정
-    joint_connections = [
-        # 척추 계층 - 이름이 같은 관절끼리 연결
-        (0, 3),    # pelvis -> spine1 (인덱스로 직접 연결)
-        (3, 6),    # spine1 -> spine2
-        (6, 11),   # spine2 -> spine3
-        (11, 14),  # spine3 -> neck
-        (14, 17),  # neck -> head
-        
-        # 왼쪽 팔 계층 - 왼쪽 어깨는 척추3이 아닌 어깨에 연결
-        (6, 9),    # spine2 -> left_shoulder (spine3 대신 spine2에 연결)
-        (9, 12),   # left_shoulder -> left_elbow
-        (12, 15),  # left_elbow -> left_wrist
-        (15, 18),  # left_wrist -> left_hand
-        
-        # 오른쪽 팔 계층
-        (6, 10),   # spine2 -> right_shoulder (spine3 대신 spine2에 연결)
-        (10, 13),  # right_shoulder -> right_elbow
-        (13, 16),  # right_elbow -> right_wrist
-        (16, 19),  # right_wrist -> right_hand
-        
-        # 왼쪽 다리 계층
-        (0, 1),    # pelvis -> left_hip
-        (1, 4),    # left_hip -> left_knee
-        (4, 7),    # left_knee -> left_ankle
-        (7, 20),   # left_ankle -> left_foot
-        (20, 22),  # left_foot -> left_toe
-        
-        # 오른쪽 다리 계층
-        (0, 2),    # pelvis -> right_hip
-        (2, 5),    # right_hip -> right_knee
-        (5, 8),    # right_knee -> right_ankle
-        (8, 21),   # right_ankle -> right_foot
-        (21, 23)   # right_foot -> right_toe
-    ]
-    
     # 디버깅: 본 연결 정보 출력
     print("\n관절 연결 정보 (GLB 생성용):")
     for start_idx, end_idx in joint_connections:
-        start_name = smpl_joint_names[start_idx] if start_idx < len(smpl_joint_names) else f"joint_{start_idx}"
-        end_name = smpl_joint_names[end_idx] if end_idx < len(smpl_joint_names) else f"joint_{end_idx}"
+        start_name = smpl_bone_list[start_idx] if start_idx < len(smpl_bone_list) else f"joint_{start_idx}"
+        end_name = smpl_bone_list[end_idx] if end_idx < len(smpl_bone_list) else f"joint_{end_idx}"
         print(f"  연결: {start_idx}({start_name}) -> {end_idx}({end_name})")
     
     # Get the number of frames
@@ -217,7 +195,7 @@ def convert_smpl_to_glb(smpl_pose_array, output_path):
     # Create a mesh from joints
     for i, joint in enumerate(joints):
         vertices.append(joint)
-        joint_name = smpl_joint_names[i] if i < len(smpl_joint_names) else f"joint_{i}"
+        joint_name = smpl_bone_list[i] if i < len(smpl_bone_list) else f"joint_{i}"
         print(f"  {i}: {joint_name} - 위치: {joint}")
     
     # Create edges between connected joints
@@ -259,7 +237,7 @@ def convert_smpl_to_glb(smpl_pose_array, output_path):
         if i == 0 or i == num_frames // 2 or i == num_frames - 1:
             print(f"  프레임 {i} 시간: {i * frame_time:.2f}초")
             for j in range(min(3, len(vertices))):  # 처음 3개 관절만 출력
-                joint_name = smpl_joint_names[j] if j < len(smpl_joint_names) else f"joint_{j}"
+                joint_name = smpl_bone_list[j] if j < len(smpl_bone_list) else f"joint_{j}"
                 print(f"    관절 {j} ({joint_name}): {smpl_pose_array[i, j]}")
             print(f"    ... 외 {len(vertices) - 3} 개 관절")
     

@@ -5,6 +5,7 @@
 import os
 import shutil
 import uuid
+import numpy as np
 from pathlib import Path
 
 def save_model(file_obj, prefix, models_dir):
@@ -40,7 +41,9 @@ def save_model(file_obj, prefix, models_dir):
 def apply_animation(skin_model, anim_model, viewer_path, models_dir):
     """
     스킨 모델과 애니메이션 모델을 뷰어에 적용합니다.
-    
+    웹 기반 3D 뷰어에서 스킨 모델(GLB 등)과 애니메이션 모델(GLB, NPY, NPZ, BVH 등)을 
+    함께 시각화할 수 있도록 iframe HTML 코드를 생성하는 함수입니다.     
+
     Args:
         skin_model: 스킨 모델 파일 객체
         anim_model: 애니메이션 모델 파일 객체
@@ -53,18 +56,89 @@ def apply_animation(skin_model, anim_model, viewer_path, models_dir):
     if skin_model is None:
         return "스킨 모델을 먼저 업로드해주세요."
     
+    print("\n===== 애니메이션 모델 상세 정보 =====")
+    print(f"애니메이션 모델 타입: {type(anim_model)}")
+    print(f"애니메이션 모델 속성: {dir(anim_model)}")
+
     # 모델 저장 및 URL 생성
     skin_url = save_model(skin_model, "skin", models_dir)
     anim_url = None
     anim_type = "glb"  # 기본값
     
+    # Check for NPZ or NPY animation files and print their contents
     if anim_model:
+        print(f"model name = {anim_model.name}")
+        # 파일 크기 확인
+        try:
+            file_size = os.path.getsize(anim_model.name)
+            print(f"파일 크기: {file_size} 바이트 ({file_size/1024/1024:.2f} MB)")
+        except Exception as e:
+            print(f"파일 크기 확인 실패: {e}")
+
+        # 파일 존재 여부 확인
+        print(f"파일 존재 여부: {os.path.exists(anim_model.name)}")
+        
+        # 파일 경로 확인
+        print(f"파일 절대 경로: {os.path.abspath(anim_model.name)}")
+        
+        # 파일 확장자 확인
+        anim_ext = Path(anim_model.name).suffix.lower()
+        print(f"파일 확장자: {anim_ext}")
+
+        print(f"anim_ext = {anim_ext}")
+        # 파일 내용 확인 (NPY/NPZ 파일)
+        if anim_ext in ['.npz', '.npy']:
+            try:
+                data = np.load(anim_model.name)
+                print(f"애니메이션 데이터 ({anim_ext}) 내용:")
+                
+                if anim_ext == '.npz':
+                    print(f"NPZ 파일 키: {list(data.keys())}")
+                    for key in data.keys():
+                        array = data[key]
+                        print(f"  - {key}: 형태 {array.shape}, 타입 {array.dtype}")
+                        print(f"    값 범위: {np.min(array)} ~ {np.max(array)}")
+                        print(f"    첫 5개 요소: {array.flatten()[:5]}")
+                else:  # .npy 파일
+                    print(f"NPY 배열 형태: {data.shape}, 타입: {data.dtype}")
+                    print(f"데이터 범위: {np.min(data)} ~ {np.max(data)}")
+                    print(f"첫 5개 요소: {data.flatten()[:5]}")
+                    print(f"데이터 통계: 평균 = {np.mean(data)}, 표준편차 = {np.std(data)}")
+                    
+                    # 만약 shapes 데이터인 경우
+                    if len(data.shape) == 2 and data.shape[1] == 10:
+                        print("SMPL 형상 파라미터로 추정됩니다.")
+                    # 만약 poses 데이터인 경우
+                    elif len(data.shape) == 2 and (data.shape[1] == 72 or data.shape[1] % 3 == 0):
+                        print("SMPL 포즈 파라미터로 추정됩니다.")
+                        print(f"관절 수: {data.shape[1] // 3}")
+                
+            except Exception as e:
+                print(f"애니메이션 데이터 로드 오류: {str(e)}")
+        # GLB 파일인 경우
+        elif anim_ext == '.glb':
+            print("GLB 애니메이션 파일 감지됨")
+            try:
+                import pygltflib
+                gltf = pygltflib.GLTF2().load(anim_model.name)
+                print(f"GLB 정보: {len(gltf.nodes)}개 노드, {len(gltf.animations)}개 애니메이션")
+                
+                if gltf.animations:
+                    for i, anim in enumerate(gltf.animations):
+                        print(f"애니메이션 {i}: {anim.name}, {len(anim.channels)}개 채널, {len(anim.samplers)}개 샘플러")
+                else:
+                    print("애니메이션 모델 없음: None")
+            except Exception as e:
+                print(f"GLB 파일 분석 오류: {str(e)}")
+            
+            print("====================================\n")
+
         anim_url = save_model(anim_model, "anim", models_dir)
         # 파일 확장자로 애니메이션 타입 결정
         anim_ext = Path(anim_model.name).suffix.lower()
         if anim_ext == '.bvh':
             anim_type = "bvh"
-    
+
     # 뷰어 URL 생성 (파일 URL 형식으로)
     viewer_url = f"/file={viewer_path}?skin={skin_url}"
     if anim_url:

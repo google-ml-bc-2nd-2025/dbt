@@ -16,7 +16,7 @@ def create_viewer_html(output_path):
         생성된 HTML 파일 경로
     """
     # 템플릿 HTML 파일 경로
-    template_path = Path(__file__).parent / "static" / "viewer_template.html"
+    template_path = Path(__file__).parent.parent / "static" / "viewer_template.html"
     
     # 템플릿 파일이 존재하지 않으면 생성
     if not template_path.exists():

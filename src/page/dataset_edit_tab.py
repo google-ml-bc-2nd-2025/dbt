@@ -9,9 +9,9 @@ import numpy as np
 import tempfile
 
 # 모듈화된 코드 임포트
-from pose_extractor import extract_pose_from_video
-from glb_generator import generate_glb_from_pose_data, map_mediapipe_to_glb_joints
-from dataset_generator import process_animation_files
+from converter.pose_extractor import extract_pose_from_video
+from converter.glb_generator import generate_glb_from_pose_data, map_mediapipe_to_glb_joints
+from converter.dataset_generator import process_animation_files
 
 def create_dataset_edit_tab(VIEWER_PATH,MODELS_DIR):
     """

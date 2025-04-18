@@ -4,8 +4,8 @@
 
 import gradio as gr
 from pathlib import Path
-from file_utils import apply_animation, send_prompt
-from smpl_animation import apply_to_glb
+from util.file_utils import apply_animation, send_prompt
+from render.smpl_animation import apply_to_glb
 
 def create_animation_tab(VIEWER_PATH, MODELS_DIR):
     """애니메이션 생성 탭 인터페이스 생성"""
@@ -92,10 +92,10 @@ def create_animation_tab(VIEWER_PATH, MODELS_DIR):
             
             file_ext = Path(anim.name).suffix.lower()
             
-            if file_ext == '.npy':
-                # NPY 파일 처리 (SMPL 애니메이션)
+            # NPY 또는 NPZ 파일 처리 (SMPL 애니메이션)
+            if file_ext in ['.npy', '.npz']:
                 try:
-                    return apply_to_glb(skin, anim, VIEWER_PATH, MODELS_DIR)
+                    anim = apply_to_glb(skin, anim, VIEWER_PATH, MODELS_DIR, return_type='glb')
                 except Exception as e:
                     return f"""
                     <div style="width: 100%; height: 500px; background-color: #333; border-radius: 8px; 
@@ -106,9 +106,10 @@ def create_animation_tab(VIEWER_PATH, MODELS_DIR):
                         </div>
                     </div>
                     """
-            else:
-                # 기존 GLB/BVH 파일 처리
-                return apply_animation(skin, anim, VIEWER_PATH, MODELS_DIR)
+            # 기존 GLB/BVH 파일 처리
+            print(f"skin = {skin}")
+            print(f"anim = {anim}")
+            return apply_animation(skin, anim, VIEWER_PATH, MODELS_DIR)
         
         # 버튼 클릭 이벤트 함수 등록
         apply_btn.click(

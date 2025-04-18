@@ -19,8 +19,9 @@ import io
 from io import BytesIO
 import base64
 
-from bone_mappings import SMPL_JOINT_NAMES, MIXAMO_TO_SMPL, find_matching_bones, get_smpl_joint_index
-from viewer_template import create_viewer_html
+from model.bone_mappings import SMPL_JOINT_NAMES, find_matching_bones, get_smpl_joint_index
+from model.smpl import mixamo_to_smpl_map as MIXAMO_TO_SMPL
+from util.viewer_template import create_viewer_html
 
 def axis_angle_to_rotation_6d(pose_aa):  # (T, 72) or (T, 24, 3)
     """
@@ -110,9 +111,9 @@ def glb_to_6d_rotation(glb_file_path, output_path=None):
     from pathlib import Path
     
     # 출력 경로가 지정되지 않은 경우 입력 파일과 같은 경로에 저장
-    if output_path is None:
+    if (output_path is None):
         output_path = Path(glb_file_path).with_suffix('.npz')
-    
+
     # GLB 파일 로드
     gltf = pygltflib.GLTF2().load(glb_file_path)
     
@@ -124,7 +125,7 @@ def glb_to_6d_rotation(glb_file_path, output_path=None):
         # 각 애니메이션 채널에서 데이터 추출
         for channel in anim.channels:
             target = channel.target
-            if target.path == "rotation":  # 회전 데이터만 처리
+            if (target.path == "rotation"):  # 회전 데이터만 처리
                 sampler = anim.samplers[channel.sampler]
                 
                 # 키프레임 시간 데이터
@@ -157,8 +158,10 @@ def glb_to_6d_rotation(glb_file_path, output_path=None):
                     'rotations': axis_angles
                 })
     
+
     # 모든 관절의 회전 데이터를 프레임별로 통합
     if poses_aa:
+
         # 프레임 수 결정
         max_frames = max(len(pose['times']) for pose in poses_aa)
         
@@ -168,7 +171,7 @@ def glb_to_6d_rotation(glb_file_path, output_path=None):
         # 각 관절의 회전 데이터 할당
         for pose in poses_aa:
             joint_id = pose['joint_id']
-            if joint_id < 24:  # SMPL 모델은 일반적으로 24개의 관절을 가짐
+            if (joint_id < 24):  # SMPL 모델은 일반적으로 24개의 관절을 가짐
                 all_poses_aa[:len(pose['times']), joint_id] = pose['rotations']
         
         # axis-angle에서 6D 회전 표현으로 변환
@@ -217,12 +220,12 @@ class SMPLAnimationLoader:
         try:
             ext = os.path.splitext(filepath)[1].lower()
             
-            if ext == '.json':
+            if (ext == '.json'):
                 with open(filepath, 'r') as f:
                     self.animation_data = json.load(f)
                     
                     # FPS 정보 확인
-                    if 'fps' in self.animation_data:
+                    if ('fps' in self.animation_data):
                         self.fps = self.animation_data['fps']
                     
                     # axis-angle 형식으로 로드
@@ -230,38 +233,70 @@ class SMPLAnimationLoader:
                     print(f"JSON 애니메이션 로드 성공: {len(self.animation_data['poses'])} 프레임")
                     return True
                     
-            elif ext == '.npy':
-                poses = np.load(filepath, allow_pickle=True)
+            elif (ext == '.npy'):
+                try:
+                    poses = np.load(filepath, allow_pickle=True) # 예) (18, 3, 3, 120) - 120 : 프레임수
+                    
+                    # motion 키가 있는지 확인하고 있으면 해당 데이터 사용
+                    if isinstance(poses, np.ndarray) and poses.dtype == np.dtype('O') and isinstance(poses.item(), dict) and 'motion' in poses.item():
+                        print("motion 키 발견: dict 내부에서 추출")
+                        poses = poses.item()['motion']
+                    # 기존 방식 (딕셔너리가 직접 반환되는 경우)
+                    elif isinstance(poses, dict) and 'motion' in poses:
+                        print("motion 키 발견: 직접 추출")
+                        poses = poses['motion']
+
+                    print(f"NPY 파일 불러옴: {type(poses)} , {poses.shape}, {poses.ndim}")  # 디버그 정보 추가
                 
-                # NPY 파일은 포즈 데이터만 포함하므로 나머지 필드는 기본값으로 설정
-                self.animation_data = {
-                    'poses': poses.tolist() if isinstance(poses, np.ndarray) else poses,
-                    'shape': [0.0] * 10,
-                    'trans': [[0.0, 0.0, 0.0] for _ in range(len(poses))],
-                    'fps': self.fps
-                }
-                
-                # 기본적으로 axis-angle 형식으로 간주
-                self.use_6d_rotation = False
-                print(f"NPY 애니메이션 로드 성공: {len(self.animation_data['poses'])} 프레임")
-                return True
+                    # 배열 변환 및 길이 확인
+                    if not isinstance(poses, np.ndarray):
+                        poses = np.array(poses)
+                        print("포즈 데이터를 numpy 배열로 변환했습니다.")
+                    
+                    if len(poses.shape) == 0:
+                        # 크기가 없는 객체
+                        print("오류: 포즈 데이터가 올바른 형태가 아닙니다.")
+                        return False
+                    
+                    # 프레임 수 기반 FPS 추정 (17초 영상 기준)
+                    frame_count = len(poses)
+                    estimated_fps = max(24, min(60, frame_count / 17))  # 17초 영상 가정, 범위는 24-60
+                    
+                    # NPY 파일은 포즈 데이터만 포함하므로 나머지 필드는 기본값으로 설정
+                    self.animation_data = {
+                        'poses': poses.tolist() if isinstance(poses, np.ndarray) else poses,
+                        'shape': [0.0] * 10,
+                        'trans': [[0.0, 0.0, 0.0] for _ in range(frame_count)],
+                        'fps': estimated_fps  # 추정된 FPS 사용
+                    }
+                    
+                    self.fps = estimated_fps  # 클래스 변수 fps도 업데이트
+                    print(f"NPY 애니메이션 로드 성공: {frame_count} 프레임, 추정 FPS: {estimated_fps:.1f}")
+                    return True
+                except Exception as e:
+                    print(f"NPY 파일 로드 중 오류 발생: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    return False
             
-            elif ext == '.npz':
+            elif (ext == '.npz'):
                 npz_data = np.load(filepath, allow_pickle=True)
                 
-                if 'poses_6d' in npz_data:
+                if ('poses_6d' in npz_data):
                     # 6D 회전 표현이 있는 경우
                     self.poses_6d = npz_data['poses_6d']
                     self.use_6d_rotation = True
+                    frame_count = npz_data.get('frame_count', len(self.poses_6d))
+                    estimated_fps = max(24, min(60, frame_count / 17))  # 17초 영상 가정, 범위는 24-60
                     
                     # axis-angle 형식이 있으면 함께 로드 (역호환성)
-                    if 'poses_aa' in npz_data:
+                    if ('poses_aa' in npz_data):
                         poses_aa = npz_data['poses_aa']
                         self.animation_data = {
                             'poses': poses_aa.tolist() if isinstance(poses_aa, np.ndarray) else poses_aa,
                             'shape': [0.0] * 10,
                             'trans': [[0.0, 0.0, 0.0] for _ in range(len(poses_aa))],
-                            'fps': npz_data.get('fps', self.fps)
+                            'fps': estimated_fps
                         }
                     else:
                         # 6D 표현을 axis-angle로 변환하여 호환성 유지
@@ -270,18 +305,17 @@ class SMPLAnimationLoader:
                             'poses': poses_aa.tolist(),
                             'shape': [0.0] * 10,
                             'trans': [[0.0, 0.0, 0.0] for _ in range(len(poses_aa))],
-                            'fps': npz_data.get('fps', self.fps)
+                            'fps': estimated_fps
                         }
                     
-                    frame_count = npz_data.get('frame_count', len(self.poses_6d))
                     print(f"NPZ 애니메이션 로드 성공 (6D 회전 표현): {frame_count} 프레임")
                     return True
                 
-                elif 'poses' in npz_data or 'poses_aa' in npz_data:
+                elif ('poses' in npz_data or 'poses_aa' in npz_data):
                     # 기존 형식의 NPZ 파일 (축-각도 표현)
                     poses = npz_data.get('poses', npz_data.get('poses_aa', None))
                     
-                    if poses is not None:
+                    if (poses is not None):
                         self.animation_data = {
                             'poses': poses.tolist() if isinstance(poses, np.ndarray) else poses,
                             'shape': npz_data.get('shape', [0.0] * 10),
@@ -318,14 +352,14 @@ class SMPLAnimationLoader:
         Returns:
             관절별 회전 데이터 딕셔너리 {joint_name: [frame1_rotation, frame2_rotation, ...]}
         """
-        if not self.animation_data or 'poses' not in self.animation_data:
+        if (not self.animation_data or 'poses' not in self.animation_data):
             print("로드된 애니메이션 데이터가 없습니다.")
             return {}
         
         joint_rotations = {joint_name: [] for joint_name in SMPL_JOINT_NAMES}
         
         # 6D 회전 표현을 사용하는 경우
-        if self.use_6d_rotation and self.poses_6d is not None:
+        if (self.use_6d_rotation and self.poses_6d is not None):
             # 6D 회전 표현을 축-각도로 변환
             poses_aa = rotation_6d_to_axis_angle(self.poses_6d)
             
@@ -335,12 +369,12 @@ class SMPLAnimationLoader:
                 
                 # 프레임의 모든 관절에 대해 처리
                 for joint_idx, joint_name in enumerate(SMPL_JOINT_NAMES):
-                    if joint_idx < 22:  # 6D 회전은 22개 관절까지만 사용
+                    if (joint_idx < 22):  # 6D 회전은 22개 관절까지만 사용
                         # 관절별 3차원 회전 벡터 추출
                         rot_start = joint_idx * 3
                         rot_end = rot_start + 3
                         
-                        if rot_end <= len(frame_pose):
+                        if (rot_end <= len(frame_pose)):
                             rotation = frame_pose[rot_start:rot_end]
                             joint_rotations[joint_name].append(rotation.tolist())
         else:
@@ -352,7 +386,7 @@ class SMPLAnimationLoader:
                     rot_start = joint_idx * 3
                     rot_end = rot_start + 3
                     
-                    if rot_end <= len(frame_pose):
+                    if (rot_end <= len(frame_pose)):
                         rotation = frame_pose[rot_start:rot_end]
                         joint_rotations[joint_name].append(rotation)
         
@@ -368,7 +402,8 @@ class SMPLAnimationLoader:
         Returns:
             키프레임 딕셔너리 {joint_name: {'rotation': [...], 'times': [...]}}
         """
-        if not self.animation_data:
+        if len(self.animation_data) <= 0:
+            print(f"애니메이션 데이터가 없습니다. self.animation_data={self.animation_data}")
             return {}
         
         joint_rotations = self.get_joint_rotations()
@@ -376,64 +411,135 @@ class SMPLAnimationLoader:
         
         # 프레임 수 확인
         frame_count = len(self.animation_data['poses'])
-        if frame_count == 0:
+        if (frame_count == 0):
             return {}
         
         # 프레임 간격 계산 (초 단위)
         src_fps = self.animation_data.get('fps', self.fps)
-        frame_time = 1.0 / src_fps
         
-        # 시간값 생성
-        times = [i * frame_time for i in range(frame_count)]
+        # 원본 영상 길이 계산 (초 단위)
+        duration_sec = frame_count / src_fps
+        print(f"원본 애니메이션 길이: {duration_sec}초 ({frame_count} 프레임, {src_fps} FPS)")
+        
+        # 시간값 생성 - 전체 프레임에 대해 정확한 타임스탬프 생성
+        times = [i * (1.0 / src_fps) for i in range(frame_count)]
         
         # 목표 FPS로 보간할 시간값 생성
-        if target_fps != src_fps:
+        if (target_fps != src_fps):
+            # 전체 애니메이션 길이를 유지하도록 타임스탬프 생성
             target_frame_time = 1.0 / target_fps
-            target_duration = times[-1] + frame_time
-            target_frame_count = int(target_duration * target_fps)
+            target_frame_count = int(duration_sec * target_fps) + 1  # 마지막 프레임 포함
             target_times = [i * target_frame_time for i in range(target_frame_count)]
+            print(f"변환 후 애니메이션: {len(target_times)} 프레임, {target_fps} FPS, {duration_sec}초")
         else:
             target_times = times
+            print(f"FPS 변환 없음: {len(times)} 프레임 유지")
         
-        # 각 관절에 대한 키프레임 생성
+        # 각 관절에 대한 키프레임 생성 (나머지 코드는 동일)
         for joint_name, rotations in joint_rotations.items():
-            if not rotations:
+            if (not rotations):
                 continue
                 
-            # 쿼터니언 변환 및 보간을 위한 준비
-            rotvecs = np.array(rotations)
-            
-            # 회전 벡터를 쿼터니언으로 변환
-            quats = R.from_rotvec(rotvecs).as_quat()  # (frame_count, 4) 형태
-            
-            # 목표 FPS로 보간이 필요한 경우
-            if target_fps != src_fps:
-                # 각 쿼터니언 성분별 보간 함수 생성
-                interp_funcs = [
-                    interp1d(times, quats[:, i], kind='linear', bounds_error=False, fill_value="extrapolate")
-                    for i in range(4)
-                ]
-                
-                # 목표 시간에서의 쿼터니언 값 계산
-                interp_quats = np.column_stack([
-                    interp_func(target_times) for interp_func in interp_funcs
-                ])
-                
-                # 보간된 쿼터니언 정규화
-                quat_lengths = np.sqrt(np.sum(interp_quats**2, axis=1))
-                normalized_quats = interp_quats / quat_lengths[:, np.newaxis]
-                
-                # 키프레임 데이터 저장
-                keyframes[joint_name] = {
-                    'rotation': normalized_quats.tolist(),
-                    'times': target_times
-                }
-            else:
-                # 보간 없이 원본 데이터 사용
-                keyframes[joint_name] = {
-                    'rotation': quats.tolist(),
-                    'times': times
-                }
+            try:
+                # 회전 벡터를 쿼터니언으로 변환
+                rotvecs = np.array(rotations)
+                print(f'관절 {joint_name} 회전 벡터 형태: {rotvecs.shape}')
+                # Extract dimensions and shape information
+                # if rotvecs.ndim == 4:  # Check if shape is like (18, 3, 3, 120)
+                #     joint_count, dim1, dim2, frame_count = rotvecs.shape
+                #     print(f"Shape: ({joint_count}, {dim1}, {dim2}, {frame_count}) - Found {frame_count} frames with {joint_count} joints")
+                #     rotvecs = np.transpose(rotvecs,(3,0,1,2))  # (120, 18, 3, 3)
+                #     rotvecs = rotvecs.reshape(frame_count* joint_count, dim1, dim2)  # (120*18, 3,3)  # 회전 행렬을 9D로 flatten
+                #     print(f"수정 후 : {type(rotvecs)} , {rotvecs.shape}, {rotvecs.ndim}")  # 디버그 정보 추가
+                    
+
+                # 입력 형태 검사 및 수정
+                if len(rotvecs.shape) == 3:  # (N, 3, 3) 형태인 경우 (회전 행렬)
+                    quats = []
+                    for rot_mat in rotvecs:
+                        try:
+                            # 회전 행렬 안정화: SVD를 통해 가장 가까운 유효한 회전 행렬 찾기
+                            U, _, Vt = np.linalg.svd(rot_mat, full_matrices=False)
+                            valid_rot_mat = U @ Vt
+                            
+                            # 행렬식이 양수인지 확인 (오른손 좌표계)
+                            if np.linalg.det(valid_rot_mat) < 0:
+                                # 마지막 열 뒤집기
+                                U[:, -1] = -U[:, -1]
+                                valid_rot_mat = U @ Vt
+                                
+                            quat = R.from_matrix(valid_rot_mat).as_quat()
+                        except Exception as e:
+                            print(f"  - 회전 행렬 수정 실패, 기본값 사용: {e}")
+                            # 기본 단위 쿼터니언 사용 (회전 없음)
+                            quat = np.array([0, 0, 0, 1])
+                            
+                        quats.append(quat)
+                    quats = np.array(quats)
+                else:  # (N, 3) 형태인 경우 (회전 벡터)
+                    # 매우 작은 값들 0으로 처리 (수치적 안정성)
+                    rotvecs = np.where(np.abs(rotvecs) < 1e-10, 0, rotvecs)
+
+                # rotvecs = rotation_6d_to_axis_angle(rotvecs)
+                # 크기가 너무 큰 회전 벡터 조정 (pi를 넘어가는 경우)
+                norms = np.linalg.norm(rotvecs, axis=1)
+                scaled_rotvecs = rotvecs.copy()
+
+                for i, norm in enumerate(norms):
+                    # 배열인지 확인하고 적절히 처리
+                    if np.isscalar(norm):
+                        if norm > np.pi:
+                            scaled_rotvecs[i] = rotvecs[i] * (np.pi / norm)
+                    else:
+                        # 배열인 경우 각 요소별 처리
+                        mask = norm > np.pi
+                        if np.any(mask):
+                            scale_factor = np.where(mask, np.pi / norm, 1.0)
+                            scaled_rotvecs[i] = rotvecs[i] * scale_factor
+                    try:
+                        if rotvecs.shape[-2:] == (3, 3):
+                            quats = R.from_matrix(rotvecs).as_quat()
+                        elif rotvecs.shape[-1] == 3:
+                            quats = R.from_rotvec(rotvecs).as_quat()
+                        else:
+                            raise ValueError(f"지원하지 않는 회전 데이터 shape: {rotvecs.shape}")
+                    except Exception as e:
+                        print(f"  - 회전 벡터 변환 실패, 기본값 사용: {e}")
+                        # 기본 단위 쿼터니언으로 대체
+                        quats = np.tile(np.array([0, 0, 0, 1]), (len(rotvecs), 1))                
+                # 목표 FPS로 보간이 필요한 경우
+                if (target_fps != src_fps):
+                    # 각 쿼터니언 성분별 보간 함수 생성
+                    interp_funcs = [
+                        interp1d(times, quats[:, i], kind='linear', bounds_error=False, fill_value="extrapolate")
+                        for i in range(4)
+                    ]
+                    
+                    # 목표 시간에서의 쿼터니언 값 계산
+                    interp_quats = np.column_stack([
+                        interp_func(target_times) for interp_func in interp_funcs
+                    ])
+                    
+                    # 보간된 쿼터니언 정규화
+                    quat_lengths = np.sqrt(np.sum(interp_quats**2, axis=1))
+                    normalized_quats = interp_quats / quat_lengths[:, np.newaxis]
+                    
+                    # 키프레임 데이터 저장
+                    keyframes[joint_name] = {
+                        'rotation': normalized_quats.tolist(),
+                        'times': target_times
+                    }
+                else:
+                    # 보간 없이 원본 데이터 사용
+                    keyframes[joint_name] = {
+                        'rotation': quats.tolist(),
+                        'times': times
+                    }
+                    
+            except Exception as e:
+                print(f"관절 {joint_name}의 키프레임 생성 중 오류: {e}")
+                # 오류가 발생한 관절은 건너뜀
+                continue
         
         return keyframes
     
@@ -448,7 +554,7 @@ class SMPLAnimationLoader:
         Returns:
             성공 여부 (bool)
         """
-        if not self.animation_data:
+        if (not self.animation_data):
             print("애니메이션 데이터가 없습니다.")
             return False
         
@@ -457,8 +563,14 @@ class SMPLAnimationLoader:
             gltf = pygltflib.GLTF2().load(glb_path)
             print(f"GLB 모델 로드 성공: {glb_path}")
             
+            # 최종 GLB 파일 저장 후, 다시 로드하여 검증
+            print(f"저장된 GLB 검증: {len(gltf.animations)}개 애니메이션")
+            if gltf.animations:
+                print(f"  - 애니메이션 0: {gltf.animations[0].name}, {len(gltf.animations[0].channels)}개 채널")
+                print(f"  - 시간 액세서: {gltf.accessors[gltf.animations[0].samplers[0].input].count}개 키프레임")
+
             # 스켈레톤 분석
-            if not gltf.nodes:
+            if (not gltf.nodes):
                 print("GLB 모델에 노드가 없습니다.")
                 return False
                 
@@ -466,27 +578,36 @@ class SMPLAnimationLoader:
             bone_names = []
             bone_indices = {}
             for i, node in enumerate(gltf.nodes):
-                if hasattr(node, 'name') and node.name:
+                if (hasattr(node, 'name') and node.name):
                     bone_names.append(node.name)
                     bone_indices[node.name] = i
             
-            print(f"모델에서 {len(bone_names)}개의 본 발견")
+            # apply_to_glb 함수 내에서 매핑 정보 상세 출력
             
-            # SMPL <-> 모델 본 매핑 찾기
-            matches = find_matching_bones(bone_names, MIXAMO_TO_SMPL)
-            print(f"매핑된 본: {len(matches)}개")
+            # SMPL <-> 모델 본 매핑 찾기 (개선된 매핑 전달)
+            matches = find_matching_bones(bone_names, MIXAMO_TO_SMPL, nodes=gltf.nodes)
+            print(f"모델에서 {len(bone_names)}개의 본 발견: {bone_names[:10]}...")
+            print(f"매핑된 본: {len(matches)}개, 매핑 목록: {matches}")
             
-            if not matches:
+            if (not matches):
                 print("매핑된 본이 없습니다.")
                 return False
             
-            # 키프레임 데이터 생성
-            keyframes = self.create_keyframes(target_fps=30)  # 30fps로 통일
-            
             # 애니메이션 길이 계산 (초)
             frame_count = len(self.animation_data['poses'])
-            duration = frame_count / self.fps
+            src_fps = self.animation_data.get('fps', self.fps)
+            duration = frame_count / src_fps
+            print(f"애니메이션 길이: {duration}초 ({frame_count}프레임, {src_fps}FPS)")
             
+            # 키프레임 데이터 생성 - 원본 길이를 보존하기 위해 target_fps를 동일하게 설정
+            # 또는 target_fps를 30으로 고정하되 전체 길이를 보존하는 방식으로 수정
+            keyframes = self.create_keyframes(target_fps=src_fps)  # 원본 FPS 유지
+
+            # keyframes이 비어 있는지 확인
+            if not keyframes:
+                print("생성된 키프레임이 없습니다. 애니메이션을 적용할 수 없습니다.")
+                return False
+                                    
             # 애니메이션 채널 및 샘플러 생성
             all_times = []
             samplers = []
@@ -505,6 +626,24 @@ class SMPLAnimationLoader:
             # 시간 데이터 생성 (모든 본이 공유)
             sample_joint = next(iter(keyframes.values()))
             times = sample_joint['times']
+            # 시간 범위 확인 - 마지막 시간이 예상 길이와 일치하는지 확인
+            expected_duration = frame_count / src_fps
+            if len(times) > 0:
+                # 최소/최대 시간 명시적 설정 (애니메이션 길이 보존)
+                min_time = 0.0
+                max_time = expected_duration                
+
+                print(f"시간 범위: {min(times)} ~ {max(times)}")
+                print(f"예상 길이: {expected_duration}")
+                # 시간 데이터 생성 후 검증
+                print(f"시간 데이터: 처음 5개 값={times[:5]}, 마지막 5개 값={times[-5:]}")
+                print(f"키프레임 수: {len(times)}, 예상 개수: {frame_count}")
+                
+                if abs(times[-1] - expected_duration) > 0.01:
+                    scale = expected_duration / times[-1] if times[-1] > 0 else 1.0
+                    times = [t * scale for t in times]
+                    print(f"시간 범위 조정: 스케일링 적용 (×{scale:.2f})")
+
             time_data = np.array(times, dtype=np.float32).tobytes()
             
             # 시간 데이터 버퍼뷰 및 액세서 추가
@@ -521,8 +660,8 @@ class SMPLAnimationLoader:
                 componentType=pygltflib.FLOAT,
                 count=len(times),
                 type=pygltflib.SCALAR,
-                max=[float(max(times))],
-                min=[float(min(times))]
+                max=[float(expected_duration)],
+                min=[0.0]
             )
             gltf.accessors.append(time_accessor)
             
@@ -534,14 +673,14 @@ class SMPLAnimationLoader:
             
             # 매핑된 본에 애니메이션 적용
             for model_bone, smpl_bone in matches.items():
-                if model_bone not in bone_indices:
+                if (model_bone not in bone_indices):
                     continue
                     
                 node_index = bone_indices[model_bone]
                 
                 # SMPL 본 이름 찾기
                 smpl_joint_name = MIXAMO_TO_SMPL.get(smpl_bone)
-                if not smpl_joint_name or smpl_joint_name not in keyframes:
+                if (not smpl_joint_name or smpl_joint_name not in keyframes):
                     continue
                 
                 # 회전 데이터 가져오기
@@ -594,51 +733,113 @@ class SMPLAnimationLoader:
                 accessor_index += 1
                 buffer_view_index += 1
             
+            # 애니메이션 정보 출력
+            print(f"애니메이션 정보: {len(channels)}개 채널, {len(samplers)}개 샘플러")
+            print(f"애니메이션 시간 범위: {min(times)}초 ~ {max(times)}초")
+            print(f"키프레임 수: {len(times)}")
+
+            # rotation_keyframes 변수가 범위 밖에서 사용되는 문제 해결
+            # 가장 마지막으로 처리된 회전 데이터를 저장할 변수 추가
+            last_processed_rotation = None
+
+            # 첫 번째와 마지막 회전 값 확인 (사용 전에 변수가 정의되어 있는지 확인)
+            if 'rotation_keyframes' in locals() and rotation_keyframes and len(rotation_keyframes) > 1:
+                print(f"첫 번째 프레임 회전값: {rotation_keyframes[0]}")
+                print(f"마지막 프레임 회전값: {rotation_keyframes[-1]}")
+                # 나중에 참조할 수 있도록 회전 데이터 저장
+                last_processed_rotation = rotation_keyframes[-1]
+            
             # 나머지 본들을 위한 보간 로직
-            # 각 본의 부모-자식 관계 분석
+            # 매핑되지 않은 본들에 대한 더 적극적인 보간 처리
             child_to_parent = {}
+            parent_to_children = {}
+
+            # 부모-자식 관계 분석
             for i, node in enumerate(gltf.nodes):
                 if hasattr(node, 'children') and node.children:
+                    parent_to_children[i] = node.children
                     for child in node.children:
                         child_to_parent[child] = i
             
-            # 매핑되지 않은 본에 대해서는 부모 또는 자식 본의 애니메이션을 보간
+            # 매핑되지 않은 본들을 위한 처리
             for i, node in enumerate(gltf.nodes):
-                if not hasattr(node, 'name') or not node.name or node.name in matches.values():
+                if not hasattr(node, 'name') or not node.name or node.name in matches:
                     continue
                 
-                # 부모 또는 자식 본 중 애니메이션이 있는 본 찾기
-                parent_idx = child_to_parent.get(i)
-                children = [j for j, parent in child_to_parent.items() if parent == i]
-                
+                # 계층 기반 참조 본 찾기 (상향 검색: 자식->부모)
+                reference_node_idx = None
                 reference_rotations = None
+                parent_idx = i
+                depth = 0
+                max_depth = 3  # 3단계까지만 부모 방향 탐색
+                
+                while depth < max_depth:
+                    # 부모 노드가 매핑된 본인지 확인
+                    parent_idx = child_to_parent.get(parent_idx)
+                    if parent_idx is None:
+                        break
+                    
+                    if hasattr(gltf.nodes[parent_idx], 'name') and gltf.nodes[parent_idx].name in matches:
+                        smpl_joint = matches[gltf.nodes[parent_idx].name]
+                        if smpl_joint in keyframes:
+                            reference_rotations = keyframes[smpl_joint]['rotation']
+                            reference_node_idx = parent_idx
+                            print(f"상향 참조: {node.name} -> {gltf.nodes[parent_idx].name} ({smpl_joint})")
+                            break
+                    
+                    depth += 1
+                
+                # 하향 검색 (부모->자식)
+                if reference_rotations is None:
+                    children = parent_to_children.get(i, [])
+                    for child_idx in children:
+                        if hasattr(gltf.nodes[child_idx], 'name') and gltf.nodes[child_idx].name in matches:
+                            smpl_joint = matches[gltf.nodes[child_idx].name]
+                            if smpl_joint in keyframes:
+                                reference_rotations = keyframes[smpl_joint]['rotation']
+                                reference_node_idx = child_idx
+                                print(f"하향 참조: {node.name} -> {gltf.nodes[child_idx].name} ({smpl_joint})")
+                                break
+                
+                # 참조 본을 찾았으면 애니메이션 적용
+                if reference_rotations:
+                    # 참조 본과의 관계(부모/자식)에 따라 감쇠 계수 조절
+                    if reference_node_idx == child_to_parent.get(i):
+                        # 참조 본이 부모인 경우
+                        damping = 0.85  # 부모의 움직임을 강하게 반영
+                    elif i == child_to_parent.get(reference_node_idx):
+                        # 참조 본이 자식인 경우  
+                        damping = 0.7   # 자식의 움직임을 적당히 반영
+                    else:
+                        # 그 외 관계
+                        damping = 0.6   # 약하게 반영
                 
                 # 부모 본의 회전 확인
-                if parent_idx is not None and hasattr(gltf.nodes[parent_idx], 'name'):
+                if (parent_idx is not None and hasattr(gltf.nodes[parent_idx], 'name')):
                     parent_name = gltf.nodes[parent_idx].name
-                    if parent_name in matches.values():
+                    if (parent_name in matches.values()):
                         smpl_joint = MIXAMO_TO_SMPL.get(parent_name)
-                        if smpl_joint in keyframes:
+                        if (smpl_joint in keyframes):
                             reference_rotations = keyframes[smpl_joint]['rotation']
                 
                 # 자식 본의 회전 확인 (부모 본에 애니메이션이 없는 경우)
-                if reference_rotations is None and children:
+                if (reference_rotations is None and children):
                     for child_idx in children:
-                        if hasattr(gltf.nodes[child_idx], 'name'):
+                        if (hasattr(gltf.nodes[child_idx], 'name')):
                             child_name = gltf.nodes[child_idx].name
-                            if child_name in matches.values():
+                            if (child_name in matches.values()):
                                 smpl_joint = MIXAMO_TO_SMPL.get(child_name)
-                                if smpl_joint in keyframes:
+                                if (smpl_joint in keyframes):
                                     reference_rotations = keyframes[smpl_joint]['rotation']
                                     break
                 
                 # 참조할 회전 데이터가 있으면 약간의 감쇠를 적용하여 사용
-                if reference_rotations:
+                if (reference_rotations):
                     # 감쇠 계수 (부모/자식 본의 움직임을 감소시키기 위함)
                     damping = 0.7
                     
                     # 기본 회전 가져오기 (있는 경우)
-                    default_rotation = node.rotation if hasattr(node, 'rotation') and node.rotation else [0, 0, 0, 1]
+                    default_rotation = node.rotation if (hasattr(node, 'rotation') and node.rotation) else [0, 0, 0, 1]
                     
                     # 참조 회전에서 일부만 적용
                     damped_rotations = []
@@ -697,16 +898,38 @@ class SMPLAnimationLoader:
                     accessor_index += 1
                     buffer_view_index += 1
             
+            # 애니메이션 객체 생성 전, 채널 정보 상세 출력
+            for i, channel in enumerate(channels):
+                target_node = channel.target.node
+                node_name = gltf.nodes[target_node].name if hasattr(gltf.nodes[target_node], 'name') else f"노드 {target_node}"
+                print(f"채널 {i}: 노드 '{node_name}', 경로 '{channel.target.path}'")            
+                
             # 애니메이션 객체 생성
             animation = pygltflib.Animation(
                 name="SMPLAnimation",
                 channels=channels,
-                samplers=samplers
+                samplers=samplers,
+                # extension 필드 추가
+                extensions={
+                    "KHR_animation_duration": {
+                        "duration": duration,
+                        "fps": self.fps,
+                        "auto_play": True
+                    }
+                },
+                # 메타데이터 보강
+                extras={
+                    'fps': self.fps,
+                    'duration': duration,
+                    'frame_count': frame_count,
+                    'auto_play': True,
+                    'loop': True
+                }
             )
             gltf.animations.append(animation)
             
             # 바이너리 버퍼 업데이트
-            if not gltf.buffers:
+            if (not gltf.buffers):
                 gltf.buffers = [pygltflib.Buffer()]
             
             # 이슈 해결: binary_blob 처리 방식 완전히 수정
@@ -731,11 +954,11 @@ class SMPLAnimationLoader:
             json_chunk_end = 20 + json_chunk_length  # 20 = (magic+version+length) + (chunk length+type)
             
             # 두 번째 청크 (BIN)가 있는지 확인
-            if len(glb_data) > json_chunk_end + 8:
+            if (len(glb_data) > json_chunk_end + 8):
                 bin_chunk_length = int.from_bytes(glb_data[json_chunk_end:json_chunk_end+4], byteorder='little')
                 bin_chunk_type = glb_data[json_chunk_end+4:json_chunk_end+8]
                 
-                if bin_chunk_type == b'BIN\0':
+                if (bin_chunk_type == b'BIN\0'):
                     # 기존 BIN 청크가 있는 경우
                     bin_chunk_data = glb_data[json_chunk_end+8:json_chunk_end+8+bin_chunk_length]
                     
@@ -801,7 +1024,7 @@ class SMPLAnimationLoader:
             gltf.buffers[0].byteLength = new_bin_chunk_length
             
             # 출력 경로 설정
-            if not output_path:
+            if (not output_path):
                 base_name = os.path.splitext(glb_path)[0]
                 output_path = f"{base_name}_animated.glb"
             
@@ -811,7 +1034,7 @@ class SMPLAnimationLoader:
             print(f"애니메이션이 적용된 GLB 파일 저장 완료: {output_path}")
             
             # 임시 파일 제거
-            if os.path.exists(temp_output):
+            if (os.path.exists(temp_output)):
                 os.remove(temp_output)
             
             return output_path
@@ -822,28 +1045,39 @@ class SMPLAnimationLoader:
             traceback.print_exc()
             return False
 
-def apply_to_glb(skin_model, anim_data, viewer_path, models_dir):
+def apply_to_glb(skin_model, anim_data, viewer_path, models_dir, return_type='html'):
     """
-    SMPL 애니메이션 데이터를 GLB 모델에 적용합니다.
-    
+    SMPL 포즈 기반 애니메이션 데이터(NPY/NPZ/JSON 등)를 GLB(3D 메시) 스킨 모델에 적용하여, 
+    애니메이션이 포함된 GLB 파일을 생성하거나, 웹 뷰어에서 볼 수 있는 HTML(iframe) 코드를 반환하는 함수입니다.
+
     Args:
         skin_model: 스킨 모델 파일 객체 (GLB 형식)
-        anim_data: SMPL 애니메이션 파일 객체 (NPY 형식)
+        anim_data: SMPL 애니메이션 파일 객체 (NPY/NPZ/JSON 형식)
         viewer_path: 뷰어 HTML 파일의 경로
         models_dir: 모델 파일이 저장될 디렉토리
-    
+        return_type: 'html' 또는 'glb' (glb로 지정하면 파일 객체 반환)
+
     Returns:
-        HTML 문자열 (iframe으로 뷰어 출력)
+        HTML 문자열(iframe) 또는 파일 객체(TemporaryFile)
     """
+
+    # 필요한 모듈 로컬로 import
+    import os
+    import uuid
+    import shutil
+    from pathlib import Path
+    import traceback
+    from types import SimpleNamespace
+    
     if skin_model is None:
         return "스킨 모델을 먼저 업로드해주세요."
-    
+
     try:
-        # 고유 ID 생성
         unique_id = str(uuid.uuid4())[:8]
-        
+
         # 애니메이션이 없는 경우 스킨 파일만 처리
-        if anim_data is None or not hasattr(anim_data, 'name') or not anim_data.name.lower().endswith('.npy'):
+        if anim_data is None or not hasattr(anim_data, 'name') or not anim_data.name.lower().endswith(('.npy', '.npz', '.json')):
+            # 기존 코드 유지 (HTML 반환)
             print("애니메이션 파일이 없거나 유효하지 않습니다. 스킨 모델만 표시합니다.")
             
             # 파일명 생성
@@ -869,66 +1103,83 @@ def apply_to_glb(skin_model, anim_data, viewer_path, models_dir):
             else:
                 print(f"오류: 파일이 생성되지 않음: {result_path}")
             
+            if return_type == 'glb':
+                # GLB만 요청된 경우 파일 객체 형태로 반환
+                file_obj = SimpleNamespace()
+                file_obj.name = result_path
+                return file_obj
+            
             # URL 생성 (고정 템플릿 사용)
             glb_url = f"static/models/{result_filename}"
+            fps = loader.fps
+            frame_count = len(loader.animation_data['poses']) if loader.animation_data and 'poses' in loader.animation_data else 0
+            duration = frame_count / fps if fps > 0 else 0
             print(f"GLB URL: {glb_url}")
             
             # 고정 템플릿 사용 (viewer_template.html 파일을 직접 참조)
-            viewer_url = f"{viewer_path}?model={glb_url}"
+            viewer_url = f"{viewer_path}?model={glb_url}&duration={duration}&fps={fps}&frames={frame_count}"
             print(f"뷰어 URL: {viewer_url}")
             
+            # 애니가 없거나 지원하는 포멧이 아니면 그냥 t pose만 출력
             # iframe으로 뷰어 표시
             return f"""
-            <div style="width: 100%; height: 500px; border-radius: 8px; overflow: hidden; position: relative;">
-                <div id="loading-overlay-{unique_id}" style="position: absolute; width: 100%; height: 100%; 
-                      background-color: rgba(0,0,0,0.7); color: white; display: flex; justify-content: center; 
-                      align-items: center; z-index: 10;">
-                    <div style="text-align: center;">
-                        <h3>모델 로딩 중...</h3>
-                        <p>잠시만 기다려주세요.</p>
+                <div style="width: 100%; height: 500px; border-radius: 8px; overflow: hidden; position: relative;">
+                    <div id="loading-overlay-{unique_id}" style="position: absolute; width: 100%; height: 100%; 
+                        background-color: rgba(0,0,0,0.7); color: white; display: flex; justify-content: center; 
+                        align-items: center; z-index: 10;">
+                        <div style="text-align: center;">
+                            <h3>애니메이션 모델 로딩 중...</h3>
+                            <p>잠시만 기다려주세요.</p>
+                        </div>
                     </div>
+                    <iframe id="model-viewer-{unique_id}" src="{viewer_url}" 
+                            style="width: 100%; height: 100%; border: none;"
+                            onload="
+                                document.getElementById('loading-overlay-{unique_id}').style.display='none';
+                                // 0.5초 후 애니메이션 재생 명령 전송
+                                setTimeout(function() {{
+                                    document.getElementById('model-viewer-{unique_id}').contentWindow.postMessage({{
+                                        'action': 'play',
+                                        'duration': {duration},
+                                        'fps': {fps},
+                                        'frames': {frame_count}
+                                    }}, '*');
+                                }}, 500);
+                            ">
+                    </iframe>
                 </div>
-                <iframe id="model-viewer-{unique_id}" src="{viewer_url}" 
-                        style="width: 100%; height: 100%; border: none;"
-                        onload="document.getElementById('loading-overlay-{unique_id}').style.display='none';">
-                </iframe>
-            </div>
-            
-            <div style="margin-top: 10px;">
-                <p style="margin-bottom: 5px;">모델 정보:</p>
-                <ul style="margin-top: 0;">
-                    <li>파일: {os.path.basename(skin_model.name)}</li>
-                    <li>애니메이션: 없음 (정적 모델)</li>
-                </ul>
-            </div>
-            """
-        
+                """
+
         # 파일명 생성
         skin_ext = Path(skin_model.name).suffix.lower()
         result_filename = f"anim_{unique_id}{skin_ext}"
         result_path = os.path.join(models_dir, result_filename)
-        
-        print(f"출력 파일 경로: {result_path}")
-        print(f"models_dir: {models_dir}")
-        
-        # 기존 파일 동작 확인
-        print(f"스킨 모델 확인: {skin_model.name}, 존재함: {os.path.exists(skin_model.name)}")
-        print(f"애니메이션 파일 확인: {anim_data.name}, 존재함: {os.path.exists(anim_data.name)}")
-        
-        # SMPLAnimationLoader를 직접 사용하여 애니메이션 적용
+
         loader = SMPLAnimationLoader()
-        
-        # 애니메이션 파일 로드
         loader.load_animation(anim_data.name)
-        
+
         if not loader.animation_data:
+            # 기존 코드 유지 (HTML 반환)
             print("애니메이션 데이터 로드 실패")
             # 스킨 모델만 복사
             shutil.copy2(skin_model.name, result_path)
             
+            if return_type == 'glb':
+                # GLB만 요청된 경우 파일 객체 형태로 반환
+                file_obj = SimpleNamespace()
+                file_obj.name = result_path
+                return file_obj
+            
             # URL 생성 및 결과 반환 (고정 템플릿 사용)
             glb_url = f"static/models/{result_filename}"
-            viewer_url = f"{viewer_path}?model={glb_url}"
+            # 애니메이션이 없는 경우 기본값 사용
+            fps = 30  # 기본 fps
+            frame_count = 0  # 애니메이션 없음
+            duration = 0     # 애니메이션 길이 0
+            print(f"GLB URL: {glb_url}")
+            # 고정 템플릿 사용 (viewer_template.html 파일을 직접 참조)
+            viewer_url = f"{viewer_path}?model={glb_url}&duration={duration}&fps={fps}&frames={frame_count}"
+            print(f"뷰어 URL: {viewer_url}")
             
             return f"""
             <div style="width: 100%; height: 500px; border-radius: 8px; overflow: hidden; position: relative;">
@@ -951,69 +1202,83 @@ def apply_to_glb(skin_model, anim_data, viewer_path, models_dir):
                 <p>NPY 파일에서 유효한 애니메이션 데이터를 찾을 수 없습니다.</p>
             </div>
             """
-        
-        print(f"애니메이션 데이터 로드 성공: {len(loader.animation_data['poses'])} 프레임")
-        
-        # SMPLAnimationLoader의 apply_to_glb 메서드 사용
+
+        # GLB 변환만 반환하는 옵션 처리
+        if return_type == 'glb':
+            # 임시 파일로 저장
+            temp_glb_path = os.path.join(models_dir, f"temp_{unique_id}{skin_ext}")
+            output_path = loader.apply_to_glb(skin_model.name, temp_glb_path)
+            if not output_path or not os.path.exists(output_path):
+                # 실패한 경우 원본 스킨 사용
+                file_obj = SimpleNamespace()
+                file_obj.name = skin_model.name
+                return file_obj
+                
+            # 파일 객체 생성
+            file_obj = SimpleNamespace()
+            file_obj.name = output_path  # 실제 파일 경로 저장
+            
+            return file_obj
+
+        # 기존 HTML 반환 로직
         output_path = loader.apply_to_glb(skin_model.name, result_path)
-        
         if not output_path or not os.path.exists(output_path):
+            # 기존 코드 유지 (HTML 반환)
             print(f"애니메이션 적용 실패: 출력 파일 {output_path}가 존재하지 않습니다.")
             # 스킨 모델만 복사
             shutil.copy2(skin_model.name, result_path)
             
             # URL 생성 및 결과 반환 (고정 템플릿 사용)
+            # apply_to_glb 함수 내의 HTML 반환 코드 수정
             glb_url = f"static/models/{result_filename}"
-            viewer_url = f"{viewer_path}?model={glb_url}"
+            fps = loader.fps
+            frame_count = len(loader.animation_data['poses']) if loader.animation_data and 'poses' in loader.animation_data else 0
+            print(f"GLB URL: {glb_url}")
+
+            # 고정 템플릿 사용 (viewer_template.html 파일을 직접 참조)
+            viewer_url = f"{viewer_path}?model={glb_url}&duration={duration}&fps={fps}&frames={frame_count}"
+            print(f"뷰어 URL: {viewer_url}") # 로그 출력 확인 가능
             
             return f"""
             <div style="width: 100%; height: 500px; border-radius: 8px; overflow: hidden; position: relative;">
                 <div id="loading-overlay-{unique_id}" style="position: absolute; width: 100%; height: 100%; 
-                      background-color: rgba(0,0,0,0.7); color: white; display: flex; justify-content: center; 
-                      align-items: center; z-index: 10;">
+                    background-color: rgba(0,0,0,0.7); color: white; display: flex; justify-content: center; 
+                    align-items: center; z-index: 10;">
                     <div style="text-align: center;">
-                        <h3>모델 로딩 중...</h3>
-                        <p>애니메이션 적용에 실패하여 스킨 모델만 표시합니다.</p>
+                        <h3>애니메이션 모델 로딩 중...</h3>
+                        <p>잠시만 기다려주세요.</p>
                     </div>
                 </div>
                 <iframe id="model-viewer-{unique_id}" src="{viewer_url}" 
                         style="width: 100%; height: 100%; border: none;"
-                        onload="document.getElementById('loading-overlay-{unique_id}').style.display='none';">
+                        onload="
+                            document.getElementById('loading-overlay-{unique_id}').style.display='none';
+                            // 0.5초 후 애니메이션 재생 명령 전송
+                            setTimeout(function() {{
+                                document.getElementById('model-viewer-{unique_id}').contentWindow.postMessage({{
+                                    'action': 'play',
+                                    'duration': {duration},
+                                    'fps': {fps},
+                                    'frames': {frame_count}
+                                }}, '*');
+                            }}, 500);
+                        ">
                 </iframe>
             </div>
-            
-            <div style="margin-top: 10px;">
-                <p style="margin-bottom: 5px; color: #ff6b6b;">⚠️ 애니메이션 적용 실패</p>
-                <p>SMPL 애니메이션을 GLB에 적용하는 중 오류가 발생했습니다. 스킨 모델만 표시합니다.</p>
-            </div>
             """
-        
-        print(f"애니메이션 적용 성공: {output_path}")
-        print(f"출력 파일 확인: {output_path}, 크기: {os.path.getsize(output_path)} 바이트")
-        
-        # 출력 파일이 result_path와 다른 경우 복사
+
         if output_path != result_path:
             shutil.copy2(output_path, result_path)
-            print(f"결과 파일 복사: {output_path} -> {result_path}")
-        
-        # 파일 생성 확인
-        if os.path.exists(result_path):
-            print(f"최종 파일 확인: {result_path}, 크기: {os.path.getsize(result_path)} 바이트")
-        else:
-            print(f"오류: 최종 파일이 생성되지 않음: {result_path}")
-            return "파일 생성 실패: 결과 파일을 찾을 수 없습니다."
-        
-        # URL 생성 (고정 템플릿 사용)
+
         glb_url = f"static/models/{result_filename}"
-        print(f"최종 GLB URL: {glb_url}")
-        viewer_url = f"{viewer_path}?model={glb_url}"
-        print(f"최종 뷰어 URL: {viewer_url}")
-        
-        # 애니메이션 메타데이터 (가능한 경우)
+        # 애니메이션 메타데이터를 URL에 추가
         fps = loader.fps
-        frame_count = len(loader.animation_data['poses']) if loader.animation_data and 'poses' in loader.animation_data else 0
-        
-        # iframe으로 뷰어 표시
+        frame_count = len(loader.animation_data['poses'])
+        duration = frame_count / fps
+        viewer_url = f"{viewer_path}?model={glb_url}&duration={duration}&fps={fps}&frames={frame_count}"
+        print(f"[DEBUG] 애니메이션 없음 - 뷰어 URL: {viewer_url}")
+        print(f"[DEBUG] 파라미터: duration={duration}, fps={fps}, frames={frame_count}")
+
         return f"""
         <div style="width: 100%; height: 500px; border-radius: 8px; overflow: hidden; position: relative;">
             <div id="loading-overlay-{unique_id}" style="position: absolute; width: 100%; height: 100%; 
@@ -1026,10 +1291,16 @@ def apply_to_glb(skin_model, anim_data, viewer_path, models_dir):
             </div>
             <iframe id="model-viewer-{unique_id}" src="{viewer_url}" 
                     style="width: 100%; height: 100%; border: none;"
-                    onload="document.getElementById('loading-overlay-{unique_id}').style.display='none';">
+                    onload="
+                        document.getElementById('loading-overlay-{unique_id}').style.display='none';
+                        // 0.5초 후 애니메이션 재생 명령 전송
+                        setTimeout(function() {{
+                            document.getElementById('model-viewer-{unique_id}').contentWindow.postMessage({{'action': 'play'}}, '*');
+                        }}, 500);
+                    ">
             </iframe>
         </div>
-        
+
         <div style="margin-top: 10px;">
             <p style="margin-bottom: 5px;">모델 정보:</p>
             <ul style="margin-top: 0;">
@@ -1054,11 +1325,17 @@ def apply_to_glb(skin_model, anim_data, viewer_path, models_dir):
             </div>
         </div>
         """
-            
+
     except Exception as e:
         print(f"SMPL 애니메이션 적용 오류: {e}")
-        import traceback
+        print(f"[DEBUG] 예외 발생 시점의 데이터: 프레임 수={frame_count if 'frame_count' in locals() else 'N/A'}, FPS={fps if 'fps' in locals() else 'N/A'}")
         traceback.print_exc()
+        
+        # # GLB 요청인 경우 오류 발생시 원본 스킨 반환
+        # if return_type == 'glb':
+        #     file_obj = SimpleNamespace()
+        #     file_obj.name = skin_model.name
+        #     return file_obj
         
         # 오류가 발생해도 최대한 결과를 보여주기 위해 시도
         try:
@@ -1072,8 +1349,14 @@ def apply_to_glb(skin_model, anim_data, viewer_path, models_dir):
             
             # URL 생성 (고정 템플릿 사용)
             glb_url = f"static/models/{result_filename}"
-            viewer_url = f"{viewer_path}?model={glb_url}"
-            
+            # 애니메이션 메타데이터를 URL에 추가
+            fps = loader.fps
+            frame_count = len(loader.animation_data['poses'])
+            duration = frame_count / fps
+            viewer_url = f"{viewer_path}?model={glb_url}&duration={duration}&fps={fps}&frames={frame_count}"
+            print(f"[DEBUG] 애니메이션 적용 - 뷰어 URL: {viewer_url}")
+            print(f"[DEBUG] 파라미터: duration={duration}, fps={fps}, frames={frame_count}")
+
             return f"""
             <div style="width: 100%; height: 500px; border-radius: 8px; overflow: hidden; position: relative;">
                 <div id="loading-overlay-{unique_id}" style="position: absolute; width: 100%; height: 100%; 

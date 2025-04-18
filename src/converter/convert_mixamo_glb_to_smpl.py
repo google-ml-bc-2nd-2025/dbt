@@ -477,7 +477,7 @@ def convert_glb_to_motionclip(glb_path, output_dir=None):
         fps = metadata.get('fps', 30) if metadata else 30
         
         # 중간 결과물 저장 (NPY 단일 배열)
-        # save_smpl_npy(pose, npy_path, fps=fps, pose_6d=pose_6d)
+        save_smpl_npy(pose, npy_path, fps=fps, pose_6d=pose_6d)
         
         # NPZ 형식으로도 저장 (여러 배열)
         # save_smpl_npz(pose, npz_path, fps=fps, pose_6d=pose_6d)

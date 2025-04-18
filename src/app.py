@@ -8,11 +8,11 @@ import threading
 from pathlib import Path
 
 # 프로젝트 내 사용자 정의 모듈 임포트
-from viewer_template import create_viewer_html
+from util.viewer_template import create_viewer_html
 # 탭 모듈 임포트
-from animation_tab import create_animation_tab
-from dataset_edit_tab import create_dataset_edit_tab
-from dataset_create_tab import create_dataset_create_tab  # 새로운 탭 모듈 임포트
+from page.animation_tab import create_animation_tab
+from page.dataset_edit_tab import create_dataset_edit_tab
+from page.dataset_create_tab import create_dataset_create_tab  # 새로운 탭 모듈 임포트
 
 # 정적 파일 디렉토리 생성
 STATIC_DIR = Path(__file__).parent / "static"
