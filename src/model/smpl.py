@@ -30,35 +30,35 @@ joint_connections = [
     # 척추 계층 - 이름이 같은 관절끼리 연결
     (0, 3),    # pelvis -> spine1 (인덱스로 직접 연결)
     (3, 6),    # spine1 -> spine2
-    (6, 11),   # spine2 -> spine3
-    (11, 14),  # spine3 -> neck
-    (14, 17),  # neck -> head
+    (6, 9),   # spine2 -> spine3
+    (9, 12),  # spine3 -> neck
+    (12, 15),  # neck -> head
     
     # 왼쪽 팔 계층 - 왼쪽 어깨는 척추3이 아닌 어깨에 연결
-    (6, 9),    # spine2 -> left_shoulder (spine3 대신 spine2에 연결)
-    (9, 12),   # left_shoulder -> left_elbow
-    (12, 15),  # left_elbow -> left_wrist
-    (15, 18),  # left_wrist -> left_hand
+    (9, 13),    # spine2 -> left_shoulder (spine3 대신 spine2에 연결)
+    (13, 16),   # left_shoulder -> left_elbow
+    (16, 18),  # left_elbow -> left_wrist
+    (18, 20),  # left_wrist -> left_hand
     
     # 오른쪽 팔 계층
-    (6, 10),   # spine2 -> right_shoulder (spine3 대신 spine2에 연결)
-    (10, 13),  # right_shoulder -> right_elbow
-    (13, 16),  # right_elbow -> right_wrist
-    (16, 19),  # right_wrist -> right_hand
+    (9, 14),   # spine2 -> right_shoulder (spine3 대신 spine2에 연결)
+    (14, 17),  # right_shoulder -> right_elbow
+    (17, 19),  # right_elbow -> right_wrist
+    (19, 21),  # right_wrist -> right_hand
     
     # 왼쪽 다리 계층
-    (0, 1),    # pelvis -> left_hip
+    (3, 1),    # pelvis -> left_hip
     (1, 4),    # left_hip -> left_knee
     (4, 7),    # left_knee -> left_ankle
-    (7, 20),   # left_ankle -> left_foot
-    (20, 22),  # left_foot -> left_toe
+    (7, 10),   # left_ankle -> left_foot
+    # (10, 22),  # left_foot -> left_toe
     
     # 오른쪽 다리 계층
-    (0, 2),    # pelvis -> right_hip
+    (3, 2),    # pelvis -> right_hip
     (2, 5),    # right_hip -> right_knee
     (5, 8),    # right_knee -> right_ankle
-    (8, 21),   # right_ankle -> right_foot
-    (21, 23)   # right_foot -> right_toe
+    (8, 11),   # right_ankle -> right_foot
+    # (11, 23)   # right_foot -> right_toe
 ]
 
 
@@ -144,7 +144,87 @@ smpl_to_mixamo_map = {
     # "right_wrist": "mixamorig:RightHand",
 }
 
+smpl_humanml3d_to_mixamo_index = [
+    "mixamorig:Hips",           # 0 + 
+    "mixamorig:LeftUpLeg",      # 1 + 
+    "mixamorig:RightUpLeg",     # 2
+    "mixamorig:Spine",          # 3 
+    "mixamorig:LeftLeg",        # 4
+    "mixamorig:RightLeg",       # 5
+    "mixamorig:Spine1",         # 6 
+    "mixamorig:LeftFoot",       # 7
+    "mixamorig:RightFoot",      # 8
+    "mixamorig:Spine2",         # 9
+    "mixamorig:LeftToeBase",    # 10
+    "mixamorig:RightToeBase",   # 11
+    "mixamorig:Neck",           # 12 +
+    "mixamorig:LeftShoulder",   # 13
+    "mixamorig:RightShoulder",  # 14
+    "mixamorig:Head",           # 15
+    "mixamorig:LeftArm",        # 16
+    "mixamorig:RightArm",       # 17
+    "mixamorig:LeftForeArm",    # 18
+    "mixamorig:RightForeArm",   # 19
+    "mixamorig:LeftHand",       # 20
+    "mixamorig:RightHand",      # 21
+]
 
+import pickle
+from pathlib import Path
+
+def load_smpl_joint_positions(smpl_model_path):
+    """SMPL 모델에서 관절 위치 정보 로드"""
+    try:
+        with open(smpl_model_path, 'rb') as f:
+            model_data = pickle.load(f, encoding='latin1')
+        
+        # SMPL 모델 데이터에서 관절 위치 추출
+        # 모델 구조에 따라 다를 수 있음
+        if 'J' in model_data:
+            joints = model_data['J']
+        elif 'joints' in model_data:
+            joints = model_data['joints']
+        else:
+            raise KeyError("관절 정보를 찾을 수 없습니다.")
+            
+        # 딕셔너리로 변환
+        joint_positions = {}
+        for i in range(min(len(joints), 22)):  # 22개 관절만 사용
+            joint_positions[i] = joints[i].tolist() if hasattr(joints[i], 'tolist') else joints[i]
+        
+        return joint_positions
+    except Exception as e:
+        print(f"SMPL 모델 로드 실패: {e}")
+        # 기본값 반환
+        return {i: [0.0, 0.0, 0.0] for i in range(22)}
+
+# 사용 예:
+# joint_positions = load_smpl_joint_positions(f"{Path(__file__).parent}/static/smpl_models/male/model.npz")
+# 더 현실적인 관절 위치 정보 (T-포즈 기준)
+joint_positions = {
+    0: [0.0, 0.0, 0.0],              # 루트 (Hips)
+    1: [-0.1, -0.1, 0.0],            # 왼쪽 엉덩이 (다리 시작)
+    2: [0.1, -0.1, 0.0],             # 오른쪽 엉덩이 (다리 시작)
+    3: [0.0, 0.1, 0.0],              # 척추 1
+    4: [-0.1, -0.5, 0.0],            # 왼쪽 무릎
+    5: [0.1, -0.5, 0.0],             # 오른쪽 무릎
+    6: [0.0, 0.2, 0.0],              # 척추 2
+    7: [-0.1, -1.0, 0.05],        # LeftFoot - Z 위치 약간 조정
+    8: [0.1, -1.0, 0.05],         # RightFoot - Z 위치 약간 조정
+    9: [0.0, 0.3, 0.0],              # 척추 3
+    10: [-0.1, -1.05, 0.15],      # LeftToeBase - 앞쪽(Z)과 아래쪽(Y) 조정
+    11: [0.1, -1.05, 0.15],       # RightToeBase - 앞쪽(Z)과 아래쪽(Y) 조정
+    12: [0.0, 0.5, 0.0],             # 목
+    13: [-0.05, 0.5, 0.0],           # 왼쪽 어깨
+    14: [0.05, 0.5, 0.0],            # 오른쪽 어깨
+    15: [0.0, 0.6, 0.0],             # 머리
+    16: [-0.2, 0.5, 0.0],            # 왼쪽 팔 (어깨에서 팔쪽으로)
+    17: [0.2, 0.5, 0.0],             # 오른쪽 팔
+    18: [-0.4, 0.5, 0.0],            # 왼쪽 팔꿈치
+    19: [0.4, 0.5, 0.0],             # 오른쪽 팔꿈치
+    20: [-0.6, 0.5, 0.0],            # 왼쪽 손목
+    21: [0.6, 0.5, 0.0]              # 오른쪽 손목
+}
 # 다양한 접두사를 가진 모델 대응을 위한 확장 매핑 생성 함수
 def create_extended_mappings(base_map, prefixes=None):
     """

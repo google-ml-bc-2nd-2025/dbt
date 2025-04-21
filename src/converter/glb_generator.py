@@ -200,7 +200,7 @@ def generate_glb_from_pose_data(pose_data, output_path, fps=30, joint_names=None
             sampler = pygltflib.AnimationSampler(
                 input=time_accessor_index,
                 output=position_accessor_index,
-                interpolation="LINEAR"
+                interpolation="STEP"  # "LINElet duration = clip.durationAR" 대신 "STEP" 사용
             )
             animation.samplers.append(sampler)
             

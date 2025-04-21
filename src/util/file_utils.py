@@ -33,6 +33,8 @@ def save_model(file_obj, prefix, models_dir):
     
     # 파일 복사
     file_path = file_obj.name if hasattr(file_obj, "name") else file_obj
+    print(f"파일 저장 경로: {model_path}")
+    print(f"파일 복사: {file_path} -> {model_path}")
     shutil.copy2(file_path, model_path)
     
     # 파일명만 반환 (전체 경로 대신)
@@ -143,7 +145,7 @@ def apply_animation(skin_model, anim_model, viewer_path, models_dir):
     viewer_url = f"/file={viewer_path}?skin={skin_url}"
     if anim_url:
         viewer_url += f"&anim={anim_url}&animType={anim_type}"
-    
+    print(f"뷰어 URL: {viewer_url}")
     # iframe으로 뷰어 표시 (JavaScript 통신 기능 추가)
     return f"""
     <div style="width: 100%; height: 500px; border-radius: 8px; overflow: hidden;">
