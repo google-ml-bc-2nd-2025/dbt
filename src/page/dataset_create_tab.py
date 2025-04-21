@@ -11,6 +11,13 @@ import json
 import re
 from datetime import datetime
 import torch
+from util import text_parser
+
+# 파일 경로를 파일 객체처럼 처리하기 위한 클래스 추가
+class FilePathWrapper:
+    def __init__(self, path):
+        self.name = path
+        self.path = path
 
 def create_dataset_create_tab(models_dir):
     """
@@ -219,6 +226,8 @@ def create_dataset_create_tab(models_dir):
                     file_data = {k: data[k] for k in data.keys()}
                     
                     # 설명 텍스트 업데이트
+                    text_parser = text_parser.TextParser()
+                    new_description = text_parser.parse(new_description.strip())
                     file_data['text'] = np.array([new_description.strip()], dtype=object)
                     
                     # 임시 파일로 저장
@@ -448,13 +457,25 @@ def create_dataset_create_tab(models_dir):
             return f"통합 파일 생성 중 오류 발생: {str(e)}"
 
     # 데이터셋 디렉토리 선택 기능
-    with gr.Row():
-        dataset_dir_input = gr.Textbox(
-            label="데이터셋 디렉토리 경로",
-            value=str(dataset_dir),
-            interactive=True
-        )
-        refresh_btn = gr.Button("새로고침")
+    with gr.Row(2):
+        with gr.Column():
+            dataset_dir_input = gr.Textbox(
+                label="데이터셋 디렉토리 경로",
+                value=str(dataset_dir),
+                interactive=True
+            )
+            refresh_btn = gr.Button("새로고침")
+        with gr.Column(2):
+            # 3D 모델 뷰어
+            viewer = gr.HTML("""
+            <div style="width: 100%; height: 500px; background-color: #333; border-radius: 8px; 
+                        display: flex; justify-content: center; align-items: center; color: #ccc;">
+                <div style="text-align: center;">
+                    <h3>모델이 표시될 영역</h3>
+                    <p>모션을 선택하세요.</p>
+                </div>
+            </div>
+            """)
     
     # 데이터셋 목록 테이블
     dataset_table = gr.Dataframe(
@@ -505,7 +526,7 @@ def create_dataset_create_tab(models_dir):
     def select_file(evt: gr.SelectData, table_data):
         print(f"선택된 인덱스: {evt.index[0]}, 데이터: {table_data}")
         print(type(table_data))
-        
+
         # DataFrame에서 행 인덱스 접근
         try:
             # DataFrame이면 iloc 사용
@@ -529,15 +550,72 @@ def create_dataset_create_tab(models_dir):
                 file_name = selected_row[0] if len(selected_row) > 0 else ""
                 file_desc = selected_row[1] if len(selected_row) > 1 else ""
                 
-            return file_path, file_name, file_desc
+            # 파일 확장자 확인 및 3D 모델 표시
+            file_ext = Path(file_path).suffix.lower() if file_path else ""
+            viewer_html = ""
+            
+            if file_ext == '.glb':
+                # animation_tab.py의 process_animation와 유사하게 구현
+                from util.file_utils import apply_animation  # 필요한 함수 import
+
+                # 파일 경로를 name 속성이 있는 객체로 변환
+                file_obj = FilePathWrapper(file_path)
+                
+                # 고정된 dummy.glb를 스킨으로 사용
+                VIEWER_PATH = Path(__file__).parent.parent / "static" / "viewer.html"
+                MODELS_DIR = Path(__file__).parent.parent / "static" / "models"
+                dummy_path = MODELS_DIR / "dummy.glb"
+                
+                print(f"더미 경로: {dummy_path}")
+                print(f"파일 경로: {file_path}")
+                
+                # apply_animation 호출하여 모델 표시
+                if os.path.exists(dummy_path):
+                        dummy_obj = FilePathWrapper(str(dummy_path))
+                        viewer_html = apply_animation(dummy_obj, file_obj, VIEWER_PATH, MODELS_DIR)
+                else:
+                    viewer_html = f"""
+                    <div style="width: 100%; height: 300px; background-color: #333; border-radius: 8px; 
+                            display: flex; justify-content: center; align-items: center; color: #ff5555;">
+                        <div style="text-align: center;">
+                            <h3>오류</h3>
+                            <p>스킨 모델(dummy.glb)을 찾을 수 없습니다.</p>
+                            <p>경로: {dummy_path}</p>
+                        </div>
+                    </div>
+                    """
+            else:
+                # GLB 파일이 아닌 경우 기본 메시지 표시
+                viewer_html = f"""
+                <div style="width: 100%; height: 300px; background-color: #333; border-radius: 8px; 
+                        display: flex; justify-content: center; align-items: center; color: #ccc;">
+                    <div style="text-align: center;">
+                        <h3>3D 모델 미리보기</h3>
+                        <p>GLB 파일만 미리보기가 가능합니다</p>
+                        <p>선택된 파일: {file_name} ({file_ext})</p>
+                    </div>
+                </div>
+                """
+            
+            return file_path, file_name, file_desc, viewer_html
         except Exception as e:
             print(f"테이블 데이터 처리 오류: {e}")
-            return "", "", ""
+            error_html = f"""
+            <div style="width: 100%; height: 300px; background-color: #333; border-radius: 8px; 
+                    display: flex; justify-content: center; align-items: center; color: #ff5555;">
+                <div style="text-align: center;">
+                    <h3>오류 발생</h3>
+                    <p>{str(e)}</p>
+                </div>
+            </div>
+            """
+            return "", "", "", error_html
     
+    # select_file 함수의 outputs에 viewer 추가
     dataset_table.select(
         select_file,
         inputs=[dataset_table],
-        outputs=[selected_file, selected_name, new_description]
+        outputs=[selected_file, selected_name, new_description, viewer]
     )
     
     # 버튼 클릭 이벤트 수정
