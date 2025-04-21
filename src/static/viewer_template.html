@@ -260,7 +260,7 @@
                                                 Math.random() * Math.PI, 
                                                 Math.random() * Math.PI
                                             );
-                                            
+                                            mesh.visible = boneLabelsVisible; // 본 라벨 가시성 상태 설정
                                             bone.add(mesh);
                                             jointMeshes.push(mesh);
                                             
@@ -311,6 +311,7 @@
                                                 
                                                 const label = createLabelSprite(`${commentIndices[mappedIndex]}`);
                                                 label.position.y = jointSize * 1.2;
+                                                label.visible = boneLabelsVisible; // 본 라벨 가시성 상태 설정
                                                 bone.add(label);
                                                 jointLabels.push(label);
                                                 

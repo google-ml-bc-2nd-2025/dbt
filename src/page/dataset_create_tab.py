@@ -47,7 +47,7 @@ def create_dataset_create_tab(models_dir):
         try:
             data = np.load(file_path, allow_pickle=True)
             text = data.get('text')
-            text_str = text[0] if isinstance(text, np.ndarray) and text.size > 0 else "설명 없음"
+            text_str = text_parser.decode_tagged(text[0]) if isinstance(text, np.ndarray) and text.size > 0 else "설명 없음"
             
             # 포즈 데이터 형태 확인
             pose_shape = str(data.get('pose').shape) if 'pose' in data else "데이터 없음"
@@ -172,7 +172,7 @@ def create_dataset_create_tab(models_dir):
             return {
                 "path": file_path,
                 "name": animation_name,
-                "text": description_text,
+                "text": text_parser.decode_tagged(description_text),
                 "shape": shape_info
             }
         except Exception as e:
@@ -204,10 +204,12 @@ def create_dataset_create_tab(models_dir):
         
         # Gradio 테이블에 맞는 형식으로 변환
         rows = [[info["name"], info["text"], info["shape"], info["path"]] for info in file_infos]
+        
         return rows
     
     # 설명 텍스트 업데이트 함수 수정
     def update_description(file_path, new_description):
+        print(f"파일 경로: {file_path}, 설명: {new_description}")
         try:
             if not file_path or not os.path.exists(file_path):
                 return "파일을 선택해주세요."
@@ -226,8 +228,7 @@ def create_dataset_create_tab(models_dir):
                     file_data = {k: data[k] for k in data.keys()}
                     
                     # 설명 텍스트 업데이트
-                    text_parser = text_parser.TextParser()
-                    new_description = text_parser.parse(new_description.strip())
+                    print(f"NPZ 업데이트트: {new_description}")
                     file_data['text'] = np.array([new_description.strip()], dtype=object)
                     
                     # 임시 파일로 저장
@@ -247,6 +248,8 @@ def create_dataset_create_tab(models_dir):
                 txt_file_path = str(Path(file_path).with_suffix('.txt'))
                 
                 try:
+                    new_description = text_parser.encode_tagged(new_description.strip())
+                    print(f"GLB 업데이트: {new_description}")
                     # 텍스트 파일에 설명 저장
                     with open(txt_file_path, 'w', encoding='utf-8') as f:
                         f.write(new_description.strip())
@@ -326,7 +329,7 @@ def create_dataset_create_tab(models_dir):
                     pose=pose,
                     trans=trans,
                     betas=betas,
-                    text=np.array([description.strip()], dtype=object)
+                    text=np.array([text_parser.encode_tagged(description.strip())], dtype=object)
                 )
                 
                 return f"MotionCLIP 학습 파일이 생성되었습니다: {output_path}"
