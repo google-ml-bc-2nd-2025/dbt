@@ -1,1 +1,1 @@
-a/DET walking/NOUN carefully/ADV
+a walking carefully and slowly.a/DET walking/NOUN carefully/ADV and/CCONJ slowly/ADV#0.0#0.0

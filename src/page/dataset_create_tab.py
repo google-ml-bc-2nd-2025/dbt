@@ -563,10 +563,10 @@ def create_dataset_create_tab(models_dir):
                 # 파일 경로를 name 속성이 있는 객체로 변환
                 file_obj = FilePathWrapper(file_path)
                 
-                # 고정된 dummy.glb를 스킨으로 사용
+                # 고정된 tpose.glb를 스킨으로 사용
                 VIEWER_PATH = Path(__file__).parent.parent / "static" / "viewer.html"
                 MODELS_DIR = Path(__file__).parent.parent / "static" / "models"
-                dummy_path = MODELS_DIR / "dummy.glb"
+                dummy_path = MODELS_DIR / "tpose.glb"
                 
                 print(f"더미 경로: {dummy_path}")
                 print(f"파일 경로: {file_path}")
@@ -581,7 +581,7 @@ def create_dataset_create_tab(models_dir):
                             display: flex; justify-content: center; align-items: center; color: #ff5555;">
                         <div style="text-align: center;">
                             <h3>오류</h3>
-                            <p>스킨 모델(dummy.glb)을 찾을 수 없습니다.</p>
+                            <p>스킨 모델(tpose.glb)을 찾을 수 없습니다.</p>
                             <p>경로: {dummy_path}</p>
                         </div>
                     </div>

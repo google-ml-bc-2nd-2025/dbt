@@ -235,6 +235,7 @@ def send_prompt(prompt_text):
             data=json.dumps({'prompt': prompt_text}),
             timeout=10
         )
+
         
         # 실행 완료 후 플래그 해제 (필요시)
         # send_prompt._is_running = False
@@ -247,72 +248,108 @@ def send_prompt(prompt_text):
         
         if response.status_code == 200:
             result_data = response.json()
-            # {'smpl_data': {'joint_map': [...], 'thetas': [...], 'root_translation': [...]}
-            print(f"result_data = {result_data}")
-
-            smpl_format = {}
-            smpl_format["pose"] = result_data["smpl_data"]["joint_map"]
-            smpl_format["betas"] = result_data["smpl_data"]["thetas"]
-            smpl_format["trans"] = result_data["smpl_data"]["root_translation"]
-
-            # static 에 저장
-            # 출력 파일 경로 생성
-            STATIC_DIR = Path(__file__).parent / "static" / "generated"
-            STATIC_DIR.mkdir(exist_ok=True)
-            current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_name = f"generated_{current_time}.npy"
-            output_dir = STATIC_DIR
-            output_path = output_dir / output_name
-            
-            try:
-                # 여기서 실제 GLB/FBX 변환 코드 구현 필요
-                # 임시 구현: 더미 데이터 생성
-                frame_count = 60  # MotionCLIP 기본 프레임 수
+            # result_data = {'status': 'success', 'prompt': '천천히 뛰기', 'message': '프롬프트가 처리되었습니다.', 'task_id': 'd4129468-bad4-4bb4-927a-5caa4b9e3454', 'check_status_url': 'http://localhost:8000/api/tasks/d4129468-bad4-4bb4-927a-5caa4b9e3454'%7D
+            if result_data.get('status') == 'success':
+                task_id = result_data.get('task_id')
+                check_status_url = f"http://localhost:8000/api/tasks/{task_id}"
                 
-                # MotionCLIP 포맷에 맞게 데이터 생성
-                pose = np.array(smpl_format["pose"], dtype=np.float32)  # [60, 72] 형태의 포즈
-                trans = np.array(smpl_format["trans"], dtype=np.float32)  # [60, 3] 형태의 트랜스폼
-                betas = np.array(smpl_format["betas"], dtype=np.float32)  # [60, 10] 형태의 베타스
-                # (프레임 수, 24, 3) -> (프레임 수, 72) 형태로 변환
-                pose_flat = pose.reshape(frame_count, -1)
-                
-                # 6D 회전 표현으로 변환
-                pose_6d = axis_angle_to_rotation_6d(pose)
+                max_attempts = 60  # 최대 3분(60 * 3초)
+                attempts = 0                
 
-                # NPY 파일 저장
-                data = {
-                    'poses': pose_flat,
-                    'fps': 30
-                }
-                if trans is not None:
-                    data['trans'] = trans
-                if betas is not None:
-                    data['betas'] = betas
-                if pose_6d is not None:
-                    data['poses_6d'] = pose_6d
+                while attempts < max_attempts:
+                    try:
+                        status_response = requests.get(check_status_url, timeout=5)
+                        if status_response.status_code == 200:
+                            status_info = status_response.json()
+                            status = status_info.get('status', 'pending')
+                            text_result = status_info.get('text_result', '')
+                            if status == 'completed':
+                                animation_result = status_info.get('animation_result', None)
+                                # {'smpl_data': {'joint_map': [...], 'thetas': [...], 'root_translation': [...]}
+                                print(f"result_data = {animation_result}")
 
-                np.save(output_path, data)
-                print(f"파일 저장 완료: {output_path}")
+                                smpl_format = {}
+                                smpl_format["pose"] = animation_result["smpl_data"]["joint_map"]
+                                smpl_format["betas"] = animation_result["smpl_data"]["thetas"]
+                                smpl_format["trans"] = animation_result["smpl_data"]["root_translation"]
 
-                return process_animation_in_generated(output_path)
+                                # static 에 저장
+                                # 출력 파일 경로 생성
+                                STATIC_DIR = Path(__file__).parent / "static" / "generated"
+                                STATIC_DIR.mkdir(exist_ok=True)
+                                current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                                output_name = f"generated_{current_time}.npy"
+                                output_dir = STATIC_DIR
+                                output_path = output_dir / output_name
+                                
+                                try:
+                                    # 여기서 실제 GLB/FBX 변환 코드 구현 필요
+                                    # 임시 구현: 더미 데이터 생성
+                                    frame_count = 60  # MotionCLIP 기본 프레임 수
+                                    
+                                    # MotionCLIP 포맷에 맞게 데이터 생성
+                                    pose = np.array(smpl_format["pose"], dtype=np.float32)  # [60, 72] 형태의 포즈
+                                    trans = np.array(smpl_format["trans"], dtype=np.float32)  # [60, 3] 형태의 트랜스폼
+                                    betas = np.array(smpl_format["betas"], dtype=np.float32)  # [60, 10] 형태의 베타스
+                                    # (프레임 수, 24, 3) -> (프레임 수, 72) 형태로 변환
+                                    pose_flat = pose.reshape(frame_count, -1)
+                                    
+                                    # 6D 회전 표현으로 변환
+                                    pose_6d = axis_angle_to_rotation_6d(pose)
 
-                # return output_path
-            except Exception as e:
-                print(f"파일 저장 오류: {str(e)}")
-                return None
-                # return f"""
-                # <div id="prompt-result">
-                #     <p style="color: red;">프롬프트 전송 실패: 파일 저장 오류</p>
-                #     <p>{str(e)}</p>
-                # </div>
-                # """
+                                    # NPY 파일 저장
+                                    data = {
+                                        'poses': pose_flat,
+                                        'fps': 30
+                                    }
+                                    if trans is not None:
+                                        data['trans'] = trans
+                                    if betas is not None:
+                                        data['betas'] = betas
+                                    if pose_6d is not None:
+                                        data['poses_6d'] = pose_6d
 
-            return f"""
-            <div id="prompt-result">
-                <p style="color: green;">프롬프트 전송 성공!</p>
-                <pre>{json.dumps(result_data, indent=2, ensure_ascii=False)}</pre>
-            </div>
-            """
+                                    np.save(output_path, data)
+                                    print(f"파일 저장 완료: {output_path}")
+
+                                    return process_animation_in_generated(output_path)
+
+                                    # return output_path
+                                except Exception as e:
+                                    print(f"파일 저장 오류: {str(e)}")
+                                    return None
+                                    # return f"""
+                                    # <div id="prompt-result">
+                                    #     <p style="color: red;">프롬프트 전송 실패: 파일 저장 오류</p>
+                                    #     <p>{str(e)}</p>
+                                    # </div>
+                                    # """
+                            elif status == 'failed':
+                                animation_error = status_info.get('error', None)
+                                return f"""
+                                <div id="prompt-result">
+                                    <p style="color: green;">생성 실패!!</p>
+                                    <pre>{animation_error}</pre>
+                                </div>
+                                """
+                            elif status == "text_only":
+                                return f"""
+                                <div id="prompt-result">
+                                    <p style="color: green;">에러!! 프롬프트만 변환!</p>
+                                    <pre>text_result</pre>
+                                </div>
+                                """
+                            else: #  status == "processing":
+                                pass    
+                    except Exception as e:
+                        print(f"상태 확인 오류: {str(e)}")
+                        break
+            else:
+                return f"""
+                <div id="prompt-result">
+                    <p style="color: red;">프롬프트 전송 실패: {result_data.get('message')}</p>
+                </div>
+                """                
         else:
             return f"""
             <div id="prompt-result">
