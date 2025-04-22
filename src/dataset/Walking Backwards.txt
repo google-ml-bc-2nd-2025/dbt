@@ -1,1 +1,1 @@
-walk/VERB backwards/ADV carefully/ADV
+walk backwards carefully and slowlywalk/VERB backwards/ADV carefully/ADV and/CCONJ slowly/ADV#0.0#0.0

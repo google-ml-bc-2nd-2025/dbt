@@ -248,11 +248,10 @@ def create_dataset_create_tab(models_dir):
                 txt_file_path = str(Path(file_path).with_suffix('.txt'))
                 
                 try:
-                    new_description = text_parser.encode_tagged(new_description.strip())
-                    print(f"GLB 업데이트: {new_description}")
                     # 텍스트 파일에 설명 저장
                     with open(txt_file_path, 'w', encoding='utf-8') as f:
-                        f.write(new_description.strip())
+                        full_description = f"{new_description.strip()}.{text_parser.encode_tagged(new_description.strip())}#0.0#0.0"
+                        f.write(full_description)
                     
                     return f"{Path(file_path).stem} 모델의 설명이 저장되었습니다. ({txt_file_path})"
                 except Exception as e:

@@ -7,6 +7,8 @@ import shutil
 import uuid
 import numpy as np
 from pathlib import Path
+import tempfile
+from render.smpl_animation import apply_to_glb
 
 def save_model(file_obj, prefix, models_dir):
     """
@@ -165,6 +167,36 @@ def apply_animation(skin_model, anim_model, viewer_path, models_dir):
     </script>
     """
 
+def axis_angle_to_rotation_6d(pose_aa):  # (T, 72) or (T, 24, 3)
+    """
+    축-각도(axis-angle) 회전 표현을 6D 회전 표현으로 변환합니다.
+    
+    Args:
+        pose_aa: 축-각도 포즈 배열 (T, 72) 또는 (T, 24, 3)
+    
+    Returns:
+        6D 회전 표현 배열 (T, 22*6=132)
+    """
+    if len(pose_aa.shape) == 3:  # (T, 24, 3)
+        T, joints, _ = pose_aa.shape
+        pose_aa_reshaped = pose_aa.reshape(T, joints * 3)
+    else:  # (T, 72)
+        T = pose_aa.shape[0]
+        pose_aa_reshaped = pose_aa
+    
+    pose_6d = np.zeros((T, 22 * 6), dtype=np.float32)  # 첫 22개 관절만 사용
+
+    for t in range(T):
+        frame_aa = pose_aa_reshaped[t].reshape(24, 3)  # (24, 3)
+        frame_6d = []
+        for joint_idx in range(22):  # 첫 22개 관절만 사용
+            rotmat = R.from_rotvec(frame_aa[joint_idx]).as_matrix()  # (3, 3)
+            rot_6d = rotmat[:, :2].reshape(6)  # 앞 두 열 → (6,)
+            frame_6d.append(rot_6d)
+        pose_6d[t] = np.concatenate(frame_6d)
+
+    return pose_6d  # (T, 132)
+
 def send_prompt(prompt_text):
     """
     프롬프트를 localhost:8000으로 전송합니다.
@@ -180,6 +212,10 @@ def send_prompt(prompt_text):
     
     import json
     import requests
+    import datetime
+    import numpy as np
+    import gradio as gr
+    from pathlib import Path
     
     if not prompt_text.strip():
         return "프롬프트를 입력해주세요."
@@ -205,6 +241,65 @@ def send_prompt(prompt_text):
         
         if response.status_code == 200:
             result_data = response.json()
+            # {'smpl_data': {'joint_map': [...], 'thetas': [...], 'root_translation': [...]}
+
+            smpl_format = {}
+            smpl_format["pose"] = result_data["smpl_data"]["joint_map"]
+            smpl_format["betas"] = result_data["smpl_data"]["thetas"]
+            smpl_format["trans"] = result_data["smpl_data"]["root_translation"]
+
+            # static 에 저장
+            # 출력 파일 경로 생성
+            STATIC_DIR = Path(__file__).parent / "static" / "generated"
+            STATIC_DIR.mkdir(exist_ok=True)
+            current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_name = f"generated_{current_time}.npy"
+            output_dir = STATIC_DIR
+            output_path = output_dir / output_name
+            
+            try:
+                # 여기서 실제 GLB/FBX 변환 코드 구현 필요
+                # 임시 구현: 더미 데이터 생성
+                frame_count = 60  # MotionCLIP 기본 프레임 수
+                
+                # MotionCLIP 포맷에 맞게 데이터 생성
+                pose = np.array(smpl_format["pose"], dtype=np.float32)  # [60, 72] 형태의 포즈
+                trans = np.array(smpl_format["trans"], dtype=np.float32)  # [60, 3] 형태의 트랜스폼
+                betas = np.array(smpl_format["betas"], dtype=np.float32)  # [60, 10] 형태의 베타스
+                # (프레임 수, 24, 3) -> (프레임 수, 72) 형태로 변환
+                pose_flat = pose.reshape(frame_count, -1)
+                
+                # 6D 회전 표현으로 변환
+                pose_6d = axis_angle_to_rotation_6d(pose)
+
+                # NPY 파일 저장
+                data = {
+                    'poses': pose_flat,
+                    'fps': 30
+                }
+                if trans is not None:
+                    data['trans'] = trans
+                if betas is not None:
+                    data['betas'] = betas
+                if pose_6d is not None:
+                    data['poses_6d'] = pose_6d
+
+                np.save(output_path, data)
+                print(f"파일 저장 완료: {output_path}")
+
+                return process_animation_in_generated(output_path)
+
+                # return output_path
+            except Exception as e:
+                print(f"파일 저장 오류: {str(e)}")
+                return None
+                # return f"""
+                # <div id="prompt-result">
+                #     <p style="color: red;">프롬프트 전송 실패: 파일 저장 오류</p>
+                #     <p>{str(e)}</p>
+                # </div>
+                # """
+
             return f"""
             <div id="prompt-result">
                 <p style="color: green;">프롬프트 전송 성공!</p>
@@ -233,42 +328,74 @@ def send_prompt(prompt_text):
             <p style="color: red;">프롬프트 전송 실패: {str(e)}</p>
         </div>
         """
-    print(f"send prompt() 호출됨 - 프롬프트: {prompt_text}")
+
+# 버튼 클릭 이벤트 처리를 위한 함수 정의
+def process_animation_in_generated(anim_path):
+    """애니메이션 파일 형식에 따라 적절한 처리 함수를 호출"""
+    # 스킨이 없으면 오류 메시지 표시
+    if anim_path is None:
+        return """
+        <div style="width: 100%; height: 500px; background-color: #333; border-radius: 8px; 
+                    display: flex; justify-content: center; align-items: center; color: #ccc;">
+            <div style="text-align: center;">
+                <h3>오류</h3>
+                <p>모델이 정상적이지 않습니다.</p>
+            </div>
+        </div>
+        """
     
-    # Python에서 직접 API 호출 수행
-    try:
-        response = requests.post(
-            'http://localhost:8000/api/prompt',
-            headers={'Content-Type': 'application/json'},
-            data=json.dumps({'prompt': prompt_text}),
-            timeout=10
-        )
-        
-        if response.status_code == 200:
-            result_data = response.json()
-            return f"""
-            <div id="prompt-result">
-                <p style="color: green;">프롬프트 전송 성공!</p>
-                <pre>{json.dumps(result_data, indent=2, ensure_ascii=False)}</pre>
-            </div>
-            """
-        else:
-            return f"""
-            <div id="prompt-result">
-                <p style="color: red;">프롬프트 전송 실패: 서버 응답 코드 {response.status_code}</p>
-                <p>{response.text}</p>
-            </div>
-            """
-    except requests.exceptions.ConnectionError:
+    # Constants needed for further processing
+    MODELS_DIR = Path(__file__).parent / "static" / "models"
+    MODELS_DIR.mkdir(exist_ok=True, parents=True)
+    VIEWER_PATH = Path(__file__).parent / "static" / "viewer" / "index.html"
+
+    # Create a temporary file object from the npy file
+    with tempfile.NamedTemporaryFile(suffix=Path(anim_path).suffix, delete=False) as tmp:
+        # Copy the content of the original file
+        tmp.write(open(anim_path, 'rb').read())
+        tmp_path = tmp.name
+
+    # Create a MockFile object that mimics gr.File
+    class MockFile:
+        def __init__(self, path):
+            self.name = path
+            
+    # Create anim object similar to what gr.File would return
+    anim = MockFile(tmp_path)
+
+    # Also need to have a skin model for the viewer
+    # Use default skin.glb from static directory if available
+    skin_path = Path(__file__).parent / "static" / "models" / "tpose.glb"
+    if skin_path.exists():
+        skin = MockFile(str(skin_path))
+    else:
         return f"""
-        <div id="prompt-result">
-            <p style="color: red;">프롬프트 전송 실패: 서버 연결 오류</p>
-            <p>서버가 실행 중인지 확인해주세요 (localhost:8000)</p>
+        <div style="width: 100%; height: 500px; background-color: #333; border-radius: 8px; 
+                    display: flex; justify-content: center; align-items: center; color: #ccc;">
+            <div style="text-align: center;">
+                <h3>기본 포즈 skin 파일없음</h3>
+                <p>{str(e)}</p>
+            </div>
         </div>
         """
-    except Exception as e:
-        return f"""
-        <div id="prompt-result">
-            <p style="color: red;">프롬프트 전송 실패: {str(e)}</p>
-        </div>
-        """
+
+    file_ext = Path(anim.name).suffix.lower()
+    
+    # NPY 또는 NPZ 파일 처리 (SMPL 애니메이션)
+    if file_ext in ['.npy', '.npz']:
+        try:
+            anim = apply_to_glb(skin, anim, VIEWER_PATH, MODELS_DIR, return_type='glb')
+        except Exception as e:
+            return f"""
+            <div style="width: 100%; height: 500px; background-color: #333; border-radius: 8px; 
+                        display: flex; justify-content: center; align-items: center; color: #ccc;">
+                <div style="text-align: center;">
+                    <h3>SMPL 애니메이션 적용 오류</h3>
+                    <p>{str(e)}</p>
+                </div>
+            </div>
+            """
+    # 기존 GLB/BVH 파일 처리
+    print(f"skin = {skin}")
+    print(f"anim = {anim}")
+    return apply_animation(skin, anim, VIEWER_PATH, MODELS_DIR)
