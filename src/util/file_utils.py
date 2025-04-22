@@ -239,6 +239,12 @@ def send_prompt(prompt_text):
         # 실행 완료 후 플래그 해제 (필요시)
         # send_prompt._is_running = False
         
+        #    "status": "success",
+        #    "prompt": prompt,
+        #    "message": "프롬프트가 처리되었습니다.",
+        #    "task_id": task.id,
+        #    "check_status_url": f"http://localhost:8000/api/tasks/{task.id}"
+        
         if response.status_code == 200:
             result_data = response.json()
             # {'smpl_data': {'joint_map': [...], 'thetas': [...], 'root_translation': [...]}
