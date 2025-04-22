@@ -1,1 +1,1 @@
-a walking carefully and slowly.a/DET walking/NOUN carefully/ADV and/CCONJ slowly/ADV#0.0#0.0
+Crouched, Walking.crouch/VERB walk/VERB#0.0#0.0

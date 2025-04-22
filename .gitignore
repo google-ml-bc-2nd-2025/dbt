@@ -5,6 +5,7 @@ __pycache__/
 
 .DS_Store
 src/static/models/
+src/dataset/
 
 
 # C extensions
@@ -176,3 +177,4 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+src/dataset/Ascending Stairs.txt
