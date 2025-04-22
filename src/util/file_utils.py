@@ -242,6 +242,7 @@ def send_prompt(prompt_text):
         if response.status_code == 200:
             result_data = response.json()
             # {'smpl_data': {'joint_map': [...], 'thetas': [...], 'root_translation': [...]}
+            print(f"result_data = {result_data}")
 
             smpl_format = {}
             smpl_format["pose"] = result_data["smpl_data"]["joint_map"]
