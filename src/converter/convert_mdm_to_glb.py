@@ -1,6 +1,6 @@
 import pygltflib
 import numpy as np
-import os
+import os, json
 import uuid
 import struct
 from scipy.spatial.transform import Rotation as R
@@ -480,311 +480,550 @@ def create_improved_glb_animation(motion_data, output_path=None, fps=30, target_
         fps: 애니메이션 프레임 레이트
         target_bones: 교체할 본 인덱스 목록 (None이면 모든 본 교체)
     """
-    # 출력 경로 설정
-    if output_path is None:
+    try:
+        print(f"\n===== GLB 애니메이션 생성 시작 =====")
+        print(f"motion_data 타입: {type(motion_data)}")
+        if isinstance(motion_data, np.ndarray):
+            print(f"motion_data 형태: {motion_data.shape}, 차원: {motion_data.ndim}")
+        print(f"output_path: {output_path}")
+        print(f"fps: {fps}")
+        print(f"target_bones: {target_bones}")
+        
+        # 출력 경로 설정
+        if output_path is None:
+            try:
+                static_dir = Path(__file__).parent / "static"
+                static_dir.mkdir(parents=True, exist_ok=True)
+                output_path = str(static_dir / "result_static.glb")
+            except Exception as e:
+                print(f"기본 경로 설정 실패: {e}")
+                # 대체 경로 사용
+                import tempfile
+                output_path = os.path.join(tempfile.gettempdir(), "improved_animation.glb")
+        
+        # 첫 번째 애니메이션만 사용
+        print(f"모션 데이터 처리 중...")
+        
         try:
-            static_dir = Path(__file__).parent / "static"
-            static_dir.mkdir(parents=True, exist_ok=True)
-            output_path = str(static_dir / "result_static.glb")
-        except Exception as e:
-            print(f"기본 경로 설정 실패: {e}")
-            # 대체 경로 사용
-            import tempfile
-            output_path = os.path.join(tempfile.gettempdir(), "improved_animation.glb")
-    
-    # 첫 번째 애니메이션만 사용
-    current_motion = motion_data[0]  # (22, 3, F)
-    frame_count = current_motion.shape[2]
-    animation_data = np.transpose(current_motion, (2, 0, 1))  # (F, 22, 3)
-    
-    # 시간 데이터 생성
-    times = np.array([i * (1.0 / fps) for i in range(frame_count)], dtype=np.float32)
-    
-    # GLB 모델 생성
-    gltf = pygltflib.GLTF2()
-    
-    # 씬 설정
-    gltf.scene = 0
-    gltf.scenes = [pygltflib.Scene(nodes=[0])]
-    
-    # 기본 본 설정은 그대로 유지
-    # 부모-자식 관계 정의는 그대로 유지
-    # 관절 위치 (T-포즈)는 그대로 유지
-    # 노드 생성도 그대로 유지
-    
-    # 직접 GLB 생성 코드를 재사용하되, 애니메이션 부분만 수정
-    base_gltf = create_direct_glb_animation()
-    base_gltf = base_gltf["gltf"]
-    # 노드 구조 복사
-    gltf.nodes = base_gltf.nodes
-    
-    # 빈 버퍼 생성
-    gltf.buffers = [pygltflib.Buffer(byteLength=0)]
-    binary_blob = bytearray()
-    
-    # 시간 데이터 추가
-    time_data_bytes = times.tobytes()
-    time_byte_offset = len(binary_blob)
-    binary_blob.extend(time_data_bytes)
-    
-    time_buffer_view = pygltflib.BufferView(
-        buffer=0,
-        byteOffset=time_byte_offset,
-        byteLength=len(time_data_bytes)
-    )
-    gltf.bufferViews = [time_buffer_view]
-    time_buffer_view_index = 0
-    
-    time_accessor = pygltflib.Accessor(
-        bufferView=time_buffer_view_index,
-        componentType=pygltflib.FLOAT,
-        count=frame_count,
-        type=pygltflib.SCALAR,
-        max=[float(times.max())],
-        min=[float(times.min())]
-    )
-    gltf.accessors = [time_accessor]
-    time_accessor_index = 0
-    
-    # 애니메이션 데이터 생성
-    samplers = []
-    channels = []
-    
-    # 기존 애니메이션 정보 복사 (타겟 본이 아닌 경우)
-    if base_gltf.animations:
-        base_animation = base_gltf.animations[0]
-        
-        # 기존 시간 데이터 접근자 가져오기
-        base_time_accessor = base_gltf.accessors[base_animation.samplers[0].input]
-        base_frame_count = base_time_accessor.count
-        
-        # 변경할 본 목록이 없으면 모든 본 변경
-        if target_bones is None:
-            target_bones = list(range(min(22, animation_data.shape[1])))
-        
-        # 기존 채널과 샘플러 복사 (변경할 본이 아닌 경우)
-        for i, channel in enumerate(base_animation.channels):
-            node_idx = channel.target.node
+            # 데이터 형태에 따른 처리
+            if motion_data.ndim == 4:  # (N, 22, 3, F) 형태
+                print(f"4차원 모션 데이터 감지: {motion_data.shape}")
+                current_motion = motion_data[0]  # 첫 번째 애니메이션만 사용
+            elif motion_data.ndim == 3:  # (22, 3, F) 형태
+                print(f"3차원 모션 데이터 감지: {motion_data.shape}")
+                current_motion = motion_data
+            else:
+                print(f"지원되지 않는 모션 데이터 형태: {motion_data.shape}")
+                # 가정: (F, 22, 3) 형태일 수도 있음
+                if motion_data.shape[1] == 22 and motion_data.shape[2] == 3:
+                    print(f"(F, 22, 3) 형태로 가정하고 변환 시도")
+                    current_motion = np.transpose(motion_data, (1, 2, 0))
+                    print(f"변환 후 형태: {current_motion.shape}")
+                else:
+                    raise ValueError(f"지원되지 않는 모션 데이터 형태: {motion_data.shape}")
+                
+            frame_count = current_motion.shape[2]
+            print(f"프레임 수: {frame_count}")
             
-            # 변경할 본이 아니면 기존 데이터 복사
-            if node_idx not in target_bones:
-                base_sampler = base_animation.samplers[channel.sampler]
+            # (22, 3, F) -> (F, 22, 3)으로 변환
+            animation_data = np.transpose(current_motion, (2, 0, 1))
+            print(f"변환된 데이터 형태: {animation_data.shape}")
+        except Exception as shape_error:
+            print(f"모션 데이터 형태 처리 중 오류 발생: {shape_error}")
+            # 기본 형태로 가정하고 계속 진행 시도
+            print(f"원본 데이터 형태로 진행 시도")
+            animation_data = motion_data
+            frame_count = len(animation_data)
+        
+        # 시간 데이터 생성
+        times = np.array([i * (1.0 / fps) for i in range(frame_count)], dtype=np.float32)
+        
+        # GLB 모델 생성
+        print(f"GLB 모델 생성 중...")
+        gltf = pygltflib.GLTF2()
+        
+        # 씬 설정
+        gltf.scene = 0
+        gltf.scenes = [pygltflib.Scene(nodes=[0])]
+        
+        # base_gltf 로딩 시도
+        try:
+            print(f"기본 GLB 템플릿 로드 중...")
+            base_gltf = create_direct_glb_animation()
+            base_gltf = base_gltf["gltf"]
+            print(f"기본 GLB 템플릿 로드 성공: {len(base_gltf.nodes)}개 노드")
+            # 노드 구조 복사
+            gltf.nodes = base_gltf.nodes
+        except Exception as base_error:
+            print(f"기본 GLB 템플릿 로드 실패: {base_error}")
+            print(f"노드 구조 직접 생성 시도...")
+            
+            # 노드 직접 생성
+            nodes = []
+            for i, name in enumerate(bone_names):
+                translation = joint_positions[i]
+                rotation = [0.0, 0.0, 0.0, 1.0]  # 단위 쿼터니언
                 
-                # 기존 회전 데이터 접근자
-                base_rot_accessor = base_gltf.accessors[base_sampler.output]
-                base_rot_buffer_view = base_gltf.bufferViews[base_rot_accessor.bufferView]
+                node = pygltflib.Node(
+                    name=name,
+                    translation=[float(t) for t in translation],
+                    rotation=rotation,
+                )
                 
-                # 기존 바이너리 데이터 가져오기
-                base_binary = base_gltf.get_data_from_buffer_uri(base_gltf.buffers[0].uri)
-                base_rot_data = base_binary[
-                    base_rot_buffer_view.byteOffset:
-                    base_rot_buffer_view.byteOffset + base_rot_buffer_view.byteLength
-                ]
+                # 부모-자식 관계 설정
+                if i > 0:
+                    parent_idx = hierarchy[i]
+                    if len(nodes) > parent_idx:
+                        if not hasattr(nodes[parent_idx], 'children'):
+                            nodes[parent_idx].children = []
+                        nodes[parent_idx].children.append(i)
                 
-                # 복사하여 새 버퍼에 추가
-                rot_byte_offset = len(binary_blob)
-                binary_blob.extend(base_rot_data)
+                nodes.append(node)
+            
+            gltf.nodes = nodes
+            print(f"노드 구조 직접 생성 완료: {len(nodes)}개 노드")
+        
+        # 빈 버퍼 생성
+        print(f"버퍼 생성 중...")
+        gltf.buffers = [pygltflib.Buffer(byteLength=0)]
+        binary_blob = bytearray()
+        
+        # 시간 데이터 추가
+        print(f"시간 데이터 추가 중...")
+        time_data_bytes = times.tobytes()
+        time_byte_offset = len(binary_blob)
+        binary_blob.extend(time_data_bytes)
+        
+        time_buffer_view = pygltflib.BufferView(
+            buffer=0,
+            byteOffset=time_byte_offset,
+            byteLength=len(time_data_bytes)
+        )
+        gltf.bufferViews = [time_buffer_view]
+        time_buffer_view_index = 0
+        
+        time_accessor = pygltflib.Accessor(
+            bufferView=time_buffer_view_index,
+            componentType=pygltflib.FLOAT,
+            count=frame_count,
+            type=pygltflib.SCALAR,
+            max=[float(times.max())],
+            min=[float(times.min())]
+        )
+        gltf.accessors = [time_accessor]
+        time_accessor_index = 0
+        
+        # 애니메이션 데이터 생성
+        samplers = []
+        channels = []
+        
+        # 기존 애니메이션 정보 복사 (타겟 본이 아닌 경우)
+        print(f"기존 애니메이션 정보 분석 중...")
+        if hasattr(base_gltf, 'animations') and base_gltf.animations:
+            base_animation = base_gltf.animations[0]
+            
+            # 기존 시간 데이터 접근자 가져오기
+            base_time_accessor = base_gltf.accessors[base_animation.samplers[0].input]
+            base_frame_count = base_time_accessor.count
+            
+            # 변경할 본 목록이 없으면 모든 본 변경
+            if target_bones is None:
+                target_bones = list(range(min(22, animation_data.shape[1])))
+            
+            # 기존 채널과 샘플러 복사 (변경할 본이 아닌 경우)
+            for i, channel in enumerate(base_animation.channels):
+                node_idx = channel.target.node
+                
+                # 변경할 본이 아니면 기존 데이터 복사
+                if node_idx not in target_bones:
+                    base_sampler = base_animation.samplers[channel.sampler]
+                    
+                    # 기존 회전 데이터 접근자
+                    base_rot_accessor = base_gltf.accessors[base_sampler.output]
+                    base_rot_buffer_view = base_gltf.bufferViews[base_rot_accessor.bufferView]
+                    
+                    # 기존 바이너리 데이터 가져오기 시도
+                    try:
+                        print(f"기존 애니메이션 데이터 추출 중 ({i + 1}/{len(base_animation.channels)})...")
+                        # URI가 있는지 확인
+                        if hasattr(base_gltf.buffers[0], 'uri') and base_gltf.buffers[0].uri:
+                            print(f"  - URI에서 데이터 추출 시도: {base_gltf.buffers[0].uri[:30]}...")
+                            base_binary = base_gltf.get_data_from_buffer_uri(base_gltf.buffers[0].uri)
+                        # data 속성 사용
+                        elif hasattr(base_gltf.buffers[0], 'data') and base_gltf.buffers[0].data:
+                            print(f"  - 버퍼 data에서 직접 추출")
+                            base_binary = base_gltf.buffers[0].data
+                        else:
+                            print(f"  - 버퍼 데이터 없음, 건너뜀")
+                            continue
+                            
+                        # 버퍼 뷰 범위 확인
+                        if base_rot_buffer_view.byteOffset + base_rot_buffer_view.byteLength > len(base_binary):
+                            print(f"  - 잘못된 버퍼 뷰 범위: {base_rot_buffer_view.byteOffset}~{base_rot_buffer_view.byteOffset + base_rot_buffer_view.byteLength}, 버퍼 크기: {len(base_binary)}")
+                            continue
+                            
+                        base_rot_data = base_binary[
+                            base_rot_buffer_view.byteOffset:
+                            base_rot_buffer_view.byteOffset + base_rot_buffer_view.byteLength
+                        ]
+                        
+                        # 복사하여 새 버퍼에 추가
+                        rot_byte_offset = len(binary_blob)
+                        binary_blob.extend(base_rot_data)
+                        
+                        # 버퍼 뷰 추가
+                        rot_buffer_view = pygltflib.BufferView(
+                            buffer=0,
+                            byteOffset=rot_byte_offset,
+                            byteLength=len(base_rot_data)
+                        )
+                        gltf.bufferViews.append(rot_buffer_view)
+                        rot_buffer_view_index = len(gltf.bufferViews) - 1
+                        
+                        # 접근자 추가
+                        rot_accessor = pygltflib.Accessor(
+                            bufferView=rot_buffer_view_index,
+                            componentType=base_rot_accessor.componentType,
+                            count=base_rot_accessor.count,
+                            type=base_rot_accessor.type,
+                            max=base_rot_accessor.max,
+                            min=base_rot_accessor.min
+                        )
+                        gltf.accessors.append(rot_accessor)
+                        rot_accessor_index = len(gltf.accessors) - 1
+                        
+                        # 샘플러 추가
+                        sampler = pygltflib.AnimationSampler(
+                            input=time_accessor_index,
+                            output=rot_accessor_index,
+                            interpolation=base_sampler.interpolation
+                        )
+                        samplers.append(sampler)
+                        sampler_index = len(samplers) - 1
+                        
+                        # 채널 추가
+                        new_channel = pygltflib.AnimationChannel(
+                            sampler=sampler_index,
+                            target=pygltflib.AnimationChannelTarget(
+                                node=node_idx,
+                                path=channel.target.path
+                            )
+                        )
+                        channels.append(new_channel)
+                        print(f"  - 기존 애니메이션 복사 완료: {bone_names[node_idx] if node_idx < len(bone_names) else f'노드 {node_idx}'}")
+                    except Exception as copy_error:
+                        print(f"  - 기존 애니메이션 복사 실패: {copy_error}")
+                        continue
+        
+        # 새 애니메이션 데이터 처리 (타겟 본만)
+        print(f"새 애니메이션 데이터 처리 중...")
+        processed_target_bones = []
+        for joint_idx in target_bones or []:
+            if joint_idx >= len(bone_names):
+                print(f"인덱스 범위 초과: {joint_idx} >= {len(bone_names)}")
+                continue
+    
+            # 관절 이름
+            joint_name = bone_names[joint_idx]
+            print(f"관절 처리 중: {joint_name} (인덱스: {joint_idx})")
+            
+            try:
+                # 관절의 절대 위치 데이터 추출
+                if joint_idx >= animation_data.shape[1]:
+                    print(f"  - 관절 인덱스가 데이터 범위를 초과: {joint_idx} >= {animation_data.shape[1]}")
+                    continue
+                    
+                joint_positions = animation_data[:, joint_idx, :]  # (F, 3) - 절대 위치 좌표
+                
+                # 로컬 회전 계산
+                parent_idx = hierarchy.get(joint_idx, -1)
+                
+                # 회전 벡터 저장 배열 초기화
+                rotation_vectors = np.zeros((frame_count, 3))
+                
+                for frame in range(frame_count):
+                    # 현재 프레임의 관절 위치
+                    pos = joint_positions[frame]
+                    
+                    # 부모 관절이 있으면 상대적 방향 계산
+                    if parent_idx >= 0 and parent_idx < len(bone_names):
+                        if parent_idx >= animation_data.shape[1]:
+                            print(f"  - 부모 관절 인덱스가 데이터 범위를 초과: {parent_idx} >= {animation_data.shape[1]}")
+                            # 기본 회전 사용
+                            rotation = R.identity()
+                        else:
+                            parent_pos = animation_data[frame, parent_idx, :]
+                            # 부모 기준 방향 벡터
+                            direction = pos - parent_pos
+                            # 기본 방향 벡터 (T-포즈 기준)
+                            default_direction = np.array(positions[joint_idx]) - np.array(positions[parent_idx])
+                            
+                            # 두 벡터 간의 회전 계산 (0에 가까운 벡터는 단위 벡터로 대체)
+                            if np.linalg.norm(direction) < 1e-10 or np.linalg.norm(default_direction) < 1e-10:
+                                rotation = R.identity()
+                            else:
+                                # 방향 벡터를 정규화
+                                direction = direction / np.linalg.norm(direction)
+                                default_direction = default_direction / np.linalg.norm(default_direction)
+                                
+                                try:
+                                    # 두 단위 벡터 사이의 회전 계산
+                                    rotation = R.align_vectors(direction.reshape(1, 3), default_direction.reshape(1, 3))[0]
+                                except Exception as align_error:
+                                    print(f"  - 벡터 정렬 실패 (프레임 {frame}): {align_error}")
+                                    rotation = R.identity()
+                    else:
+                        # 루트 관절의 경우, 글로벌 위치에서 방향 추정
+                        if frame > 0:
+                            move_direction = pos - joint_positions[max(0, frame-1)]
+                            if np.linalg.norm(move_direction) > 1e-10:
+                                try:
+                                    # 앞 방향 벡터 (z 방향)
+                                    forward = move_direction / np.linalg.norm(move_direction)
+                                    # 위쪽 방향 벡터 (y 방향)
+                                    up = np.array([0, 1, 0])
+                                    # 오른쪽 방향 벡터 (x 방향) - 외적 사용
+                                    right = np.cross(up, forward)
+                                    if np.linalg.norm(right) > 1e-10:
+                                        right = right / np.linalg.norm(right)
+                                        # 새로운 up 벡터 계산 (직교성 보장)
+                                        up = np.cross(forward, right)
+                                        
+                                        # 회전 행렬 생성 및 쿼터니언으로 변환
+                                        rotation_matrix = np.column_stack((right, up, forward))
+                                        rotation = R.from_matrix(rotation_matrix)
+                                    else:
+                                        rotation = R.identity()
+                                except Exception as root_rotation_error:
+                                    print(f"  - 루트 회전 계산 실패 (프레임 {frame}): {root_rotation_error}")
+                                    rotation = R.identity()
+                            else:
+                                rotation = R.identity()
+                        else:
+                            rotation = R.identity()
+                    
+                    # 회전 벡터로 변환
+                    rotation_vectors[frame] = rotation.as_rotvec()
+                
+                # 좌표계 변환 적용
+                try:
+                    rotation_vectors = fix_rotation_for_joint_type(rotation_vectors, joint_idx)
+                except Exception as fix_error:
+                    print(f"  - 회전 좌표계 변환 실패: {fix_error}")
+                
+                # NaN 값 처리
+                if np.isnan(rotation_vectors).any():
+                    print(f"  - NaN 값 감지되어 0으로 대체")
+                    rotation_vectors = np.nan_to_num(rotation_vectors)
+                
+                # 쿼터니언 변환
+                try:
+                    # 쿼터니언 변환
+                    quaternions = R.from_rotvec(rotation_vectors).as_quat()  # (F, 4) [x, y, z, w]
+                    
+                    # NaN 값 재확인
+                    if np.isnan(quaternions).any():
+                        print(f"  - 쿼터니언에 NaN 값 감지되어 기본값으로 대체")
+                        identity_quat = np.array([0.0, 0.0, 0.0, 1.0])
+                        nan_indices = np.isnan(quaternions).any(axis=1)
+                        quaternions[nan_indices] = identity_quat
+                        
+                except Exception as e:
+                    print(f"  - 쿼터니언 변환 오류: {e}")
+                    # 오류 발생 시 항등 쿼터니언으로 설정
+                    quaternions = np.array([[0.0, 0.0, 0.0, 1.0]] * frame_count)
+                
+                # 부드러운 애니메이션을 위한 쿼터니언 보간
+                for i in range(1, frame_count):
+                    # 이전 쿼터니언과의 내적 확인
+                    dot = np.sum(quaternions[i-1] * quaternions[i])
+                    # 내적이 음수면 부호 반전 (최단 경로 보간)
+                    if dot < 0:
+                        quaternions[i] = -quaternions[i]
+    
+                # 쿼터니언 데이터를 이진 형식으로 변환
+                quat_data = quaternions.astype(np.float32)
+                quat_bytes = quat_data.tobytes()
+                quat_byte_offset = len(binary_blob)
+                binary_blob.extend(quat_bytes)
                 
                 # 버퍼 뷰 추가
-                rot_buffer_view = pygltflib.BufferView(
+                quat_buffer_view = pygltflib.BufferView(
                     buffer=0,
-                    byteOffset=rot_byte_offset,
-                    byteLength=len(base_rot_data)
+                    byteOffset=quat_byte_offset,
+                    byteLength=len(quat_bytes)
                 )
-                gltf.bufferViews.append(rot_buffer_view)
-                rot_buffer_view_index = len(gltf.bufferViews) - 1
+                gltf.bufferViews.append(quat_buffer_view)
+                quat_buffer_view_index = len(gltf.bufferViews) - 1
                 
                 # 접근자 추가
-                rot_accessor = pygltflib.Accessor(
-                    bufferView=rot_buffer_view_index,
-                    componentType=base_rot_accessor.componentType,
-                    count=base_rot_accessor.count,
-                    type=base_rot_accessor.type,
-                    max=base_rot_accessor.max,
-                    min=base_rot_accessor.min
-                )
-                gltf.accessors.append(rot_accessor)
-                rot_accessor_index = len(gltf.accessors) - 1
+                quat_min = np.min(quaternions, axis=0).astype(float).tolist()
+                quat_max = np.max(quaternions, axis=0).astype(float).tolist()
                 
-                # 샘플러 추가
+                quat_accessor = pygltflib.Accessor(
+                    bufferView=quat_buffer_view_index,
+                    componentType=pygltflib.FLOAT,
+                    count=frame_count,
+                    type=pygltflib.VEC4,
+                    max=quat_max,
+                    min=quat_min
+                )
+                gltf.accessors.append(quat_accessor)
+                quat_accessor_index = len(gltf.accessors) - 1
+                
+                # 샘플러 및 채널 생성
                 sampler = pygltflib.AnimationSampler(
                     input=time_accessor_index,
-                    output=rot_accessor_index,
-                    interpolation=base_sampler.interpolation
+                    output=quat_accessor_index,
+                    interpolation="LINEAR"
                 )
                 samplers.append(sampler)
                 sampler_index = len(samplers) - 1
                 
-                # 채널 추가
-                new_channel = pygltflib.AnimationChannel(
+                channel = pygltflib.AnimationChannel(
                     sampler=sampler_index,
                     target=pygltflib.AnimationChannelTarget(
-                        node=node_idx,
-                        path=channel.target.path
+                        node=joint_idx,
+                        path="rotation"
                     )
                 )
-                channels.append(new_channel)
-                print(f"기존 본 애니메이션 복사: {bone_names[node_idx]}")
-    
-    # 새 애니메이션 데이터 처리 (타겟 본만)
-    for joint_idx in target_bones:
-        if joint_idx >= len(bone_names):
-            continue
-
-        # 관절 이름
-        joint_name = bone_names[joint_idx]
-        
-        # 관절의 회전 데이터 추출
-        joint_rotations = animation_data[:, joint_idx, :]  # (F, 3)
-        
-        # 좌표계 변환 적용
-        joint_rotations = fix_rotation_for_joint_type(joint_rotations, joint_idx)
-        
-        # NaN 값 처리
-        if np.isnan(joint_rotations).any():
-            joint_rotations = np.nan_to_num(joint_rotations)
-        
-        try:
-            # 쿼터니언 변환
-            quaternions = R.from_rotvec(joint_rotations).as_quat()  # (F, 4) [x, y, z, w]
-            
-            # NaN 값 재확인
-            if np.isnan(quaternions).any():
-                identity_quat = np.array([0.0, 0.0, 0.0, 1.0])
-                nan_indices = np.isnan(quaternions).any(axis=1)
-                quaternions[nan_indices] = identity_quat
+                channels.append(channel)
+                processed_target_bones.append(joint_idx)
                 
-        except Exception as e:
-            print(f"쿼터니언 변환 오류 (관절 {joint_idx}): {e}")
-            # 오류 발생 시 항등 쿼터니언으로 설정
-            quaternions = np.array([[0.0, 0.0, 0.0, 1.0]] * frame_count)
-
-        # 쿼터니언 데이터를 이진 형식으로 변환
-        quat_data = quaternions.astype(np.float32)
-        quat_bytes = quat_data.tobytes()
-        quat_byte_offset = len(binary_blob)
-        binary_blob.extend(quat_bytes)
+                print(f"  - 애니메이션 추가 완료: {joint_name}")
+            except Exception as joint_error:
+                print(f"  - 관절 처리 실패: {joint_error}")
+                continue
         
-        # 버퍼 뷰 추가
-        quat_buffer_view = pygltflib.BufferView(
-            buffer=0,
-            byteOffset=quat_byte_offset,
-            byteLength=len(quat_bytes)
+        print(f"처리된 관절: {len(processed_target_bones)}/{len(target_bones or [])}")
+        
+        # 애니메이션 객체 생성
+        print(f"애니메이션 객체 생성 중...")
+        animation = pygltflib.Animation(
+            name="SMPLAnimation",
+            channels=channels,
+            samplers=samplers
         )
-        gltf.bufferViews.append(quat_buffer_view)
-        quat_buffer_view_index = len(gltf.bufferViews) - 1
+        gltf.animations = [animation]
         
-        # 접근자 추가
-        quat_min = np.min(quaternions, axis=0).astype(float).tolist()
-        quat_max = np.max(quaternions, axis=0).astype(float).tolist()
+        # 최종 버퍼 길이 설정
+        print(f"최종 버퍼 설정 중...")
+        gltf.buffers[0].byteLength = len(binary_blob)
         
-        quat_accessor = pygltflib.Accessor(
-            bufferView=quat_buffer_view_index,
-            componentType=pygltflib.FLOAT,
-            count=frame_count,
-            type=pygltflib.VEC4,
-            max=quat_max,
-            min=quat_min
-        )
-        gltf.accessors.append(quat_accessor)
-        quat_accessor_index = len(gltf.accessors) - 1
+        # 버퍼 데이터 설정 (주의: 이 부분에서 오류 발생 가능)
+        try:
+            print(f"버퍼 데이터 설정: 길이 {len(binary_blob)}, 타입 {type(binary_blob)}")
+            # binary_blob이 bytearray인 경우 bytes로 변환
+            if isinstance(binary_blob, bytearray):
+                binary_data = bytes(binary_blob)
+            else:
+                binary_data = binary_blob
+                
+            # 버퍼에 데이터 설정 - binary_blob 설정 전에 먼저 data 속성 설정
+            gltf.buffers[0].data = binary_data
+            
+            # URI 속성 제거 (data 사용 시에는 필요 없음)
+            if hasattr(gltf.buffers[0], 'uri') and gltf.buffers[0].uri is not None:
+                print(f"기존 URI 속성 제거: {gltf.buffers[0].uri}")
+                gltf.buffers[0].uri = None
+                
+            # set_binary_blob 함수는 신중하게 사용
+            try:
+                print(f"set_binary_blob 호출 직전")
+                gltf.set_binary_blob(binary_data)
+                print(f"set_binary_blob 호출 완료")
+            except Exception as blob_error:
+                print(f"set_binary_blob 오류: {blob_error}")
+                # 여기서 오류가 발생해도 계속 진행 (이미 data 속성 설정됨)
+                pass
+        except Exception as buffer_error:
+            print(f"버퍼 데이터 설정 오류: {buffer_error}")
+            # 대체 방법 시도: Base64 URI 사용
+            import base64
+            try:
+                print(f"대체 방법으로 Base64 URI 사용")
+                uri = "data:application/octet-stream;base64," + base64.b64encode(binary_blob).decode('ascii')
+                gltf.buffers[0].uri = uri
+                gltf.buffers[0].data = None  # data와 uri를 동시에 사용하지 않도록 함
+                print(f"Base64 URI 설정 완료")
+            except Exception as base64_error:
+                print(f"Base64 URI 설정 실패: {base64_error}")
         
-        # 샘플러 및 채널 생성
-        sampler = pygltflib.AnimationSampler(
-            input=time_accessor_index,
-            output=quat_accessor_index,
-            interpolation="LINEAR"
-        )
-        samplers.append(sampler)
-        sampler_index = len(samplers) - 1
+        # 파일 저장
+        print(f"GLB 파일 저장 중: {output_path}")
+        try:
+            # 먼저 현재 버퍼 상태 확인
+            has_data = hasattr(gltf.buffers[0], 'data') and gltf.buffers[0].data is not None
+            has_uri = hasattr(gltf.buffers[0], 'uri') and gltf.buffers[0].uri is not None
+            print(f"버퍼 상태: data={has_data}, uri={has_uri}")
+            
+            # 파일 저장
+            gltf.save(output_path)
+            print(f"GLB 파일 저장 성공: {output_path}")
+            
+            # 저장한 파일 다시 열어서 검증
+            try:
+                validation_gltf = pygltflib.GLTF2().load(output_path)
+                print(f"검증: 저장된 GLB 파일 로드 성공, 애니메이션 수: {len(validation_gltf.animations)}")
+                if validation_gltf.animations:
+                    anim = validation_gltf.animations[0]
+                    print(f"검증: 첫 번째 애니메이션 정보: 채널 수={len(anim.channels)}, 샘플러 수={len(anim.samplers)}")
+            except Exception as validation_error:
+                print(f"검증 실패: GLB 파일 로드 오류: {validation_error}")
+        except Exception as save_error:
+            print(f"GLB 파일 저장 실패: {save_error}")
+            
+            # 스택 트레이스 출력
+            import traceback
+            traceback.print_exc()
+            
+            # 대체 방법으로 다시 시도
+            try:
+                print(f"대체 저장 방식 시도")
+                # 메모리에 GLB 데이터 직접 생성
+                import io
+                import struct
+                
+                # JSON 부분 생성
+                from pygltflib.utils import export_gltf
+                json_data = export_gltf(gltf)
+                json_bytes = json_data.encode()
+                
+                # 패딩 계산 (4바이트 경계에 맞추기)
+                json_pad_len = (4 - (len(json_bytes) % 4)) % 4
+                json_padded = json_bytes + b' ' * json_pad_len
+                
+                # 바이너리 데이터 가져오기
+                bin_data = binary_blob
+                bin_pad_len = (4 - (len(bin_data) % 4)) % 4
+                bin_padded = bin_data + b'\0' * bin_pad_len
+                
+                # GLB 헤더 및 청크 생성
+                header = struct.pack('<4sII', b'glTF', 2, 12 + 8 + len(json_padded) + 8 + len(bin_padded))
+                json_header = struct.pack('<II', len(json_padded), 0x4E4F534A)  # JSON
+                bin_header = struct.pack('<II', len(bin_padded), 0x004E4942)    # BIN
+                
+                # 모든 부분 결합
+                with open(output_path, 'wb') as f:
+                    f.write(header)
+                    f.write(json_header)
+                    f.write(json_padded)
+                    f.write(bin_header)
+                    f.write(bin_padded)
+                
+                print(f"대체 방식으로 파일 저장 성공")
+            except Exception as alt_save_error:
+                print(f"대체 저장 방식도 실패: {alt_save_error}")
         
-        channel = pygltflib.AnimationChannel(
-            sampler=sampler_index,
-            target=pygltflib.AnimationChannelTarget(
-                node=joint_idx,
-                path="rotation"
-            )
-        )
-        channels.append(channel)
+        print(f"===== GLB 애니메이션 생성 완료 =====")
+        return output_path
         
-        print(f"새 애니메이션 추가: {joint_name} (인덱스: {joint_idx})")
-    
-    # 애니메이션 객체 생성
-    animation = pygltflib.Animation(
-        name="MixedAnimation",
-        channels=channels,
-        samplers=samplers
-    )
-    gltf.animations = [animation]
-
-    # 최종 버퍼 길이 설정
-    gltf.buffers[0].byteLength = len(binary_blob)
-    gltf.set_binary_blob(binary_blob)
-
-    # # 최종 버퍼 길이 설정
-    # gltf.buffers[0].byteLength = len(binary_blob)
-    # gltf.set_binary_blob(binary_blob)
-    # # 저장
-    # gltf.save(output_path)
-
-
-    output_path = f'{output_path}/improved_animation.glb' if output_path else os.path.join(os.getcwd(), "improved_animation.glb")
-    # 저장
-    print(f"혼합 애니메이션 생성 완료: {output_path}")
-
-
-   # 애니메이션 객체 생성 직전에 추가
-    print("\n===== 노드 21 상세 정보 (1) =====")
-    node21 = gltf.nodes[21]
-    print(f"이름: {node21.name}")
-    print(f"위치: {node21.translation}")
-    print(f"회전: {node21.rotation}")
-    print(f"부모: 노드 19 (RightForeArm)")
-
-    # # 노드 21에 대한 명시적인 초기화 추가
-    # node21.name = "mixamorig:RightHand"  # 이름 확인
-    # if not node21.translation or any(np.isnan(node21.translation)):
-    #     node21.translation = [0.9, 0.4, 0.0]  # 위치 재설정
-    # if not node21.rotation or any(np.isnan(node21.rotation)):
-    #     node21.rotation = [0.0, 0.0, 0.0, 1.0]  # 기본 회전
-
-    # # 부모-자식 관계 명시적 확인
-    # right_forearm = gltf.nodes[19]  # 오른쪽 팔뚝
-    # if not hasattr(right_forearm, "children") or not right_forearm.children:
-    #     right_forearm.children = [21]
-    # elif 21 not in right_forearm.children:
-    #     right_forearm.children.append(21)
-
-    import json
-    # 저장하기 직전에 추가
-    nodes_json = json.dumps([{k: v for k, v in vars(node).items() 
-                        if not k.startswith('_') and v is not None} 
-                        for node in gltf.nodes], indent=2)
-    print(f"저장 직전 노드 21 JSON:\n{nodes_json[21]}")
-
-
-    # 노드 21에 matrix 속성이 있는지 확인하고 제거
-    if hasattr(node21, 'matrix') and node21.matrix is not None:
-        print(f"노드 21에 matrix 속성 발견: {node21.matrix}")
-        node21.matrix = None
-
-    print("노드 21 데이터 확인 및 수정 완료")
-    print("============================\n")
-
-    gltf.nodes = base_gltf.nodes
-    gltf.save(output_path)
-    base_gltf.save(f"{os.path.dirname(output_path)}/_base{os.path.basename(output_path)}") # 정상
-    print(f"- 총 {len(channels)}개 채널 중 {len(target_bones)}개 새로 추가됨")
-
-    # 저장 후 파일에서 다시 로드하여 확인
-    saved_gltf = pygltflib.GLTF2().load(output_path)
-    saved_nodes_json = json.dumps([{k: v for k, v in vars(node).items() 
-                                if not k.startswith('_') and v is not None} 
-                            for node in saved_gltf.nodes], indent=2)
-    print(f"저장 후 노드 21 JSON:\n{saved_gltf.nodes[21]}")
-    print(f'저장 후 전체 노드 수: {saved_gltf.nodes}')
-    
-    return output_path
+    except Exception as e:
+        print(f"GLB 애니메이션 생성 중 오류 발생: {e}")
+        # 스택 트레이스 출력
+        import traceback
+        traceback.print_exc()
+        return None
 
 def create_direct_glb_animation(save_file=False, output_path=None):
     """
@@ -971,12 +1210,54 @@ def create_direct_glb_animation(save_file=False, output_path=None):
     
     # 최종 버퍼 길이 설정
     gltf.buffers[0].byteLength = len(binary_blob)
-    gltf.set_binary_blob(binary_blob)
+    
+    # 버퍼 데이터 설정 (오류 발생 지점)
+    try:
+        print(f"버퍼 설정: 길이 {len(binary_blob)}, 타입 {type(binary_blob)}")
+        # binary_blob이 bytearray인 경우 bytes로 변환
+        if isinstance(binary_blob, bytearray):
+            binary_data = bytes(binary_blob)
+        else:
+            binary_data = binary_blob
+            
+        gltf.buffers[0].data = binary_data
+        
+        # URI 속성 제거 (data 사용 시에는 필요 없음)
+        if hasattr(gltf.buffers[0], 'uri') and gltf.buffers[0].uri is not None:
+            print(f"기존 URI 속성 제거: {gltf.buffers[0].uri}")
+            gltf.buffers[0].uri = None
+            
+        # set_binary_blob을 사용하는 경우 data 속성을 건드릴 수 있으므로 순서에 주의
+        gltf.set_binary_blob(binary_data)
+        
+        # 버퍼 설정 후 최종 확인
+        print(f"버퍼 설정 완료: data 속성 존재 = {hasattr(gltf.buffers[0], 'data')}")
+        if hasattr(gltf.buffers[0], 'data'):
+            print(f"버퍼 data 길이: {len(gltf.buffers[0].data) if gltf.buffers[0].data is not None else 'None'}")
+    
+    except Exception as e:
+        print(f"버퍼 데이터 설정 오류: {e}")
+        # 대체 방법 시도: Base64 URI 사용
+        import base64
+        try:
+            print("대체 방법으로 Base64 URI 사용 시도")
+            uri = "data:application/octet-stream;base64," + base64.b64encode(binary_blob).decode('ascii')
+            gltf.buffers[0].uri = uri
+            gltf.buffers[0].data = None  # data와 uri를 동시에 사용하지 않도록 함
+            print(f"Base64 URI 설정 완료: 길이 {len(uri)}")
+        except Exception as e2:
+            print(f"Base64 URI 설정 오류: {e2}")
     
     # 필요한 경우 파일로 저장
     if save_file:
-        gltf.save(output_path)
-        print(f"직접 GLB 애니메이션 생성 완료: {output_path}")
+        try:
+            gltf.save(output_path)
+            print(f"직접 GLB 애니메이션 생성 완료: {output_path}")
+        except Exception as e:
+            print(f"GLB 파일 저장 오류: {e}")
+            # 오류 상세 정보 출력
+            import traceback
+            traceback.print_exc()
     
     # 애니메이션 데이터를 반환
     return {
