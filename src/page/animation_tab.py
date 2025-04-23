@@ -110,7 +110,7 @@ def create_animation_tab(VIEWER_PATH, MODELS_DIR):
                     result_path = os.path.join(MODELS_DIR, result_filename)
                     
                     # 새 함수 호출 - 미리 로드된 스킨에 애니메이션 적용
-                    output_path = create_improved_glb_animation(motion_data, result_path)
+                    output_path = create_improved_glb_animation(motion_data, result_path, base_glb_path=skin.name)
                     
                     if output_path:
                         # 애니메이션 적용된 GLB 모델만 뷰어에 전달

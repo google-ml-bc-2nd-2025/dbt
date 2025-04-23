@@ -114,7 +114,7 @@ def global_to_local_positions(global_positions, hierarchy, correct_axes=True):
     return local_positions
 
 
-def create_improved_glb_animation(motion_data, output_path=None, fps=30, target_bones=None):
+def create_improved_glb_animation(motion_data, output_path=None, fps=30, target_bones=None, base_glb_path=None):
     """
     모션 데이터(절대 위치 좌표)를 기반으로 GLB 애니메이션 생성
     추가로 모든 자식 본들에 대해서도 보간 애니메이션 생성
@@ -133,7 +133,7 @@ def create_improved_glb_animation(motion_data, output_path=None, fps=30, target_
     # 1. 데이터 형태 정규화 (F, 22, 3) 형태로 변환
     print(f"\n===== GLB 애니메이션 생성 시작 =====")
     print(f"입력 데이터 형태: {motion_data.shape}, 차원: {motion_data.ndim}")
-    
+
     if motion_data.ndim == 4:  # (N, 22, 3, F) - 배치 형태
         print(f"배치 데이터에서 첫 번째 애니메이션만 사용")
         # 첫 번째 애니메이션 추출 후 (22, 3, F) 형태
@@ -183,8 +183,12 @@ def create_improved_glb_animation(motion_data, output_path=None, fps=30, target_
     
     try:
         # 7. 베이스 GLB 템플릿 로드 - 기존 골격 구조 유지를 위해
-        base_glb_path = Path(__file__).parent / '../static/models/_baseimproved_animation.glb'
+        if base_glb_path is not None:
+            base_glb_path = Path(base_glb_path)
+        else:
+            base_glb_path = Path(__file__).parent / '../static/models/_baseimproved_animation.glb'
         print(f"기본 GLB 템플릿 로드 중: {base_glb_path}")
+
         if os.path.exists(base_glb_path):
             base_gltf = pygltflib.GLTF2().load(str(base_glb_path))
             print(f"기본 GLB 템플릿 로드 성공: {len(base_gltf.nodes)}개 노드")
@@ -206,6 +210,12 @@ def create_improved_glb_animation(motion_data, output_path=None, fps=30, target_
             gltf.scene = base_gltf.scene
             gltf.scenes = base_gltf.scenes
             gltf.nodes = base_gltf.nodes
+            gltf.meshes = base_gltf.meshes
+            gltf.skins = base_gltf.skins  # ★ 이 줄 추가
+            gltf.materials = base_gltf.materials
+            gltf.accessors = base_gltf.accessors
+            gltf.bufferViews = base_gltf.bufferViews
+            gltf.buffers = base_gltf.buffers            
             
             # 애니메이션이 없는 경우 기본 구조 생성
             if not hasattr(gltf, 'animations') or not gltf.animations:
