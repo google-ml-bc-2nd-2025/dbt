@@ -9,6 +9,10 @@ import numpy as np
 from pathlib import Path
 import tempfile
 from render.smpl_animation import apply_to_glb
+import requests
+import json
+import time
+import gradio as gr
 
 def save_model(file_obj, prefix, models_dir):
     """
@@ -59,10 +63,6 @@ def apply_animation(skin_model, anim_model, viewer_path, models_dir):
     """
     if skin_model is None:
         return "스킨 모델을 먼저 업로드해주세요."
-    
-    print("\n===== 애니메이션 모델 상세 정보 =====")
-    print(f"애니메이션 모델 타입: {type(anim_model)}")
-    print(f"애니메이션 모델 속성: {dir(anim_model)}")
 
     # 모델 저장 및 URL 생성
     skin_url = save_model(skin_model, "skin", models_dir)
@@ -197,179 +197,169 @@ def axis_angle_to_rotation_6d(pose_aa):  # (T, 72) or (T, 24, 3)
 
     return pose_6d  # (T, 132)
 
-def send_prompt(prompt_text):
+def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
     """
-    프롬프트를 localhost:8000으로 전송합니다.
+    프롬프트를 전송하고 결과를 처리하는 함수
     
     Args:
-        prompt_text: 사용자가 입력한 프롬프트 텍스트
-    
-    Returns:
-        HTML 문자열 (프롬프트 전송 결과 표시)
+        prompt_text: 사용자 입력 프롬프트
+        progress: Gradio Progress 컴포넌트
     """
-    import json
-    import requests
-    
-    import json
-    import requests
-    import datetime
-    import numpy as np
-    import gradio as gr
-    from pathlib import Path
     
     if not prompt_text.strip():
         return "프롬프트를 입력해주세요."
     
-    # 디버깅을 위한 로그 추가
-    print(f"send_prompt() 호출됨 - 프롬프트: {prompt_text}")
-    
-    # 단일 호출 보장을 위한 플래그 사용 (필요시)
-    # if hasattr(send_prompt, '_is_running') and send_prompt._is_running:
-    #     return "이전 요청이 처리 중입니다..."
-    # send_prompt._is_running = True
-    
     try:
+        # 프롬프트 전송
+        progress(0, desc="프롬프트 전송 중...")
         response = requests.post(
             'http://localhost:8000/api/prompt',
             headers={'Content-Type': 'application/json'},
-            data=json.dumps({'prompt': prompt_text}),
-            timeout=10
+            json={'prompt': prompt_text},
         )
-
-        
-        # 실행 완료 후 플래그 해제 (필요시)
-        # send_prompt._is_running = False
-        
-        #    "status": "success",
-        #    "prompt": prompt,
-        #    "message": "프롬프트가 처리되었습니다.",
-        #    "task_id": task.id,
-        #    "check_status_url": f"http://localhost:8000/api/tasks/{task.id}"
         
         if response.status_code == 200:
             result_data = response.json()
-            # result_data = {'status': 'success', 'prompt': '천천히 뛰기', 'message': '프롬프트가 처리되었습니다.', 'task_id': 'd4129468-bad4-4bb4-927a-5caa4b9e3454', 'check_status_url': 'http://localhost:8000/api/tasks/d4129468-bad4-4bb4-927a-5caa4b9e3454'%7D
-            if result_data.get('status') == 'success':
-                task_id = result_data.get('task_id')
-                check_status_url = f"http://localhost:8000/api/tasks/{task_id}"
-                
-                max_attempts = 60  # 최대 3분(60 * 3초)
-                attempts = 0                
-
-                while attempts < max_attempts:
-                    try:
-                        status_response = requests.get(check_status_url, timeout=5)
-                        if status_response.status_code == 200:
-                            status_info = status_response.json()
-                            status = status_info.get('status', 'pending')
-                            text_result = status_info.get('text_result', '')
-                            if status == 'completed':
-                                animation_result = status_info.get('animation_result', None)
-                                # {'smpl_data': {'joint_map': [...], 'thetas': [...], 'root_translation': [...]}
-                                print(f"result_data = {animation_result}")
-
-                                smpl_format = {}
-                                smpl_format["pose"] = animation_result["smpl_data"]["joint_map"]
-                                smpl_format["betas"] = animation_result["smpl_data"]["thetas"]
-                                smpl_format["trans"] = animation_result["smpl_data"]["root_translation"]
-
-                                # static 에 저장
-                                # 출력 파일 경로 생성
-                                STATIC_DIR = Path(__file__).parent / "static" / "generated"
-                                STATIC_DIR.mkdir(exist_ok=True)
-                                current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                                output_name = f"generated_{current_time}.npy"
-                                output_dir = STATIC_DIR
-                                output_path = output_dir / output_name
-                                
-                                try:
-                                    # 여기서 실제 GLB/FBX 변환 코드 구현 필요
-                                    # 임시 구현: 더미 데이터 생성
-                                    frame_count = 60  # MotionCLIP 기본 프레임 수
-                                    
-                                    # MotionCLIP 포맷에 맞게 데이터 생성
-                                    pose = np.array(smpl_format["pose"], dtype=np.float32)  # [60, 72] 형태의 포즈
-                                    trans = np.array(smpl_format["trans"], dtype=np.float32)  # [60, 3] 형태의 트랜스폼
-                                    betas = np.array(smpl_format["betas"], dtype=np.float32)  # [60, 10] 형태의 베타스
-                                    # (프레임 수, 24, 3) -> (프레임 수, 72) 형태로 변환
-                                    pose_flat = pose.reshape(frame_count, -1)
-                                    
-                                    # 6D 회전 표현으로 변환
-                                    pose_6d = axis_angle_to_rotation_6d(pose)
-
-                                    # NPY 파일 저장
-                                    data = {
-                                        'poses': pose_flat,
-                                        'fps': 30
-                                    }
-                                    if trans is not None:
-                                        data['trans'] = trans
-                                    if betas is not None:
-                                        data['betas'] = betas
-                                    if pose_6d is not None:
-                                        data['poses_6d'] = pose_6d
-
-                                    np.save(output_path, data)
-                                    print(f"파일 저장 완료: {output_path}")
-
-                                    return process_animation_in_generated(output_path)
-
-                                    # return output_path
-                                except Exception as e:
-                                    print(f"파일 저장 오류: {str(e)}")
-                                    return None
-                                    # return f"""
-                                    # <div id="prompt-result">
-                                    #     <p style="color: red;">프롬프트 전송 실패: 파일 저장 오류</p>
-                                    #     <p>{str(e)}</p>
-                                    # </div>
-                                    # """
-                            elif status == 'failed':
-                                animation_error = status_info.get('error', None)
-                                return f"""
-                                <div id="prompt-result">
-                                    <p style="color: green;">생성 실패!!</p>
-                                    <pre>{animation_error}</pre>
-                                </div>
-                                """
-                            elif status == "text_only":
-                                return f"""
-                                <div id="prompt-result">
-                                    <p style="color: green;">에러!! 프롬프트만 변환!</p>
-                                    <pre>text_result</pre>
-                                </div>
-                                """
-                            else: #  status == "processing":
-                                pass    
-                    except Exception as e:
-                        print(f"상태 확인 오류: {str(e)}")
-                        break
-            else:
+            task_id = result_data.get('task_id')
+            
+            if not task_id:
                 return f"""
                 <div id="prompt-result">
-                    <p style="color: red;">프롬프트 전송 실패: {result_data.get('message')}</p>
+                    <p style="color: red;">작업 ID가 없습니다</p>
+                    <p style="color: #666; font-size: 0.9em;">서버 응답에 작업 ID가 포함되어 있지 않습니다.</p>
                 </div>
-                """                
+                """
+            
+            # 상태 추적 시작
+            max_retries = 60  # 180초 (3초 간격)
+            retry_count = 0
+            last_state = None
+            
+            for i in progress.tqdm(range(max_retries), desc="작업 진행 중..."):
+                try:
+                    status_response = requests.get(
+                        f'http://localhost:8000/api/tasks/{task_id}',
+                    )
+                    
+                    if status_response.status_code == 200:
+                        status_data = status_response.json()
+                        current_status = status_data.get('status')
+                        
+                        # 상태가 변경되었을 때만 로그 출력
+                        if current_status != last_state:
+                            print(f"작업 상태 변경: {last_state} -> {current_status}")
+                            last_state = current_status
+                        
+                        # None 상태나 processing 상태일 때는 계속 대기
+                        if current_status is None or current_status == 'processing':
+                            time.sleep(3)  # 3초 대기
+                            continue
+                        
+                        if current_status == 'completed':
+                            # 모션 데이터 조회
+                            motion_data = status_data.get('data', {}).get('motion', {})
+                            print(f"motion_data = {motion_data}")
+                            print(f"status_data = {status_data}")
+                            
+                            try:
+                                # motion_data가 문자열인 경우 JSON으로 파싱
+                                if isinstance(motion_data, str):
+                                    motion_data = json.loads(motion_data)
+                                
+                                # base64로 인코딩된 데이터 디코딩
+                                if 'data' in motion_data:
+                                    import base64
+                                    import numpy as np
+                                    
+                                    # base64 디코딩
+                                    decoded_data = base64.b64decode(motion_data['data'])
+                                    
+                                    # numpy 배열로 변환
+                                    motion_array = np.frombuffer(decoded_data, dtype=motion_data['dtype'])
+                                    
+                                    # shape에 맞게 reshape
+                                    motion_array = motion_array.reshape(motion_data['shape'])
+                                    
+                                    # 메타데이터에서 pose와 trans의 shape 가져오기
+                                    pose_shape = status_data.get('data', {}).get('animation_result', {}).get('metadata', {}).get('pose_shape', (1, 120, 24, 3))
+                                    trans_shape = status_data.get('data', {}).get('animation_result', {}).get('metadata', {}).get('trans_shape', (1, 120, 3))
+                                    
+                                    # pose와 trans 데이터 분리
+                                    pose_size = np.prod(pose_shape)
+                                    trans_size = np.prod(trans_shape)
+                                    
+                                    pose_data = motion_array[:pose_size].reshape(pose_shape)
+                                    trans_data = motion_array[-trans_size:].reshape(trans_shape)
+                                    
+                                    smpl_format = {
+                                        "pose": pose_data.tolist(),
+                                        "betas": [],
+                                        "trans": trans_data.tolist()
+                                    }
+                                else:
+                                    smpl_format = {
+                                        "pose": [],
+                                        "betas": [],
+                                        "trans": []
+                                    }
+                                
+                                return f"""
+                                <div id="prompt-result">
+                                    <p style="color: green;">모션 생성 완료!</p>
+                                    <pre>{json.dumps(smpl_format, indent=2, ensure_ascii=False)}</pre>
+                                </div>
+                                """
+                            except Exception as e:
+                                return f"""
+                                <div id="prompt-result">
+                                    <p style="color: red;">데이터 변환 오류</p>
+                                    <p style="color: #666; font-size: 0.9em;">{str(e)}</p>
+                                </div>
+                                """
+                        
+                        elif current_status == 'failed':
+                            error_message = status_data.get('error', {}).get('message', '알 수 없는 오류가 발생했습니다.')
+                            return f"""
+                            <div id="prompt-result">
+                                <p style="color: red;">모션 생성 실패</p>
+                                <p style="color: #666; font-size: 0.9em;">{error_message}</p>
+                            </div>
+                            """
+                    
+                except requests.exceptions.RequestException as e:
+                    print(f"상태 확인 중 네트워크 오류: {str(e)}")
+                    retry_count += 1
+                    continue
+                
+                retry_count += 1
+            
+            # 최대 재시도 횟수 도달
+            return f"""
+            <div id="prompt-result">
+                <p style="color: orange;">모션 생성 시간 초과</p>
+                <p style="color: #666; font-size: 0.9em;">서버가 바쁠 수 있습니다. 잠시 후 다시 시도해주세요.</p>
+            </div>
+            """
         else:
             return f"""
             <div id="prompt-result">
-                <p style="color: red;">프롬프트 전송 실패: 서버 응답 코드 {response.status_code}</p>
-                <p>{response.text}</p>
+                <p style="color: red;">서버 오류 발생 (상태 코드: {response.status_code})</p>
+                <p style="color: #666; font-size: 0.9em;">잠시 후 다시 시도해주세요.</p>
             </div>
             """
-    except requests.exceptions.ConnectionError:
-        # send_prompt._is_running = False  # 예외 발생 시에도 플래그 해제
+            
+    except requests.exceptions.RequestException as e:
         return f"""
         <div id="prompt-result">
-            <p style="color: red;">프롬프트 전송 실패: 서버 연결 오류</p>
-            <p>서버가 실행 중인지 확인해주세요 (localhost:8000)</p>
+            <p style="color: red;">네트워크 오류 발생</p>
+            <p style="color: #666; font-size: 0.9em;">{str(e)}</p>
         </div>
         """
     except Exception as e:
-        # send_prompt._is_running = False  # 예외 발생 시에도 플래그 해제
         return f"""
         <div id="prompt-result">
-            <p style="color: red;">프롬프트 전송 실패: {str(e)}</p>
+            <p style="color: red;">알 수 없는 오류 발생</p>
+            <p style="color: #666; font-size: 0.9em;">{str(e)}</p>
         </div>
         """
 

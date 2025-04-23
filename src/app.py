@@ -57,4 +57,4 @@ with gr.Blocks(title="AssetSmith") as demo:
 # 웹 서버 실행
 if __name__ == "__main__":
     # Gradio 인터페이스 실행
-    demo.launch()
+    demo.queue().launch()
