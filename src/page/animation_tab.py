@@ -6,7 +6,7 @@ import gradio as gr
 import os
 import uuid  # uuid 모듈 추가
 from pathlib import Path
-from util.file_utils import apply_animation, send_prompt
+from util.file_utils import apply_animation, send_prompt, save_model
 from render.smpl_animation import apply_to_glb
 import numpy as np
 import base64
@@ -15,163 +15,129 @@ from io import BytesIO
 from pathlib import Path
 
 def render_humanml3d(anim_file):
+    import numpy as np
+    import json
+    import base64
+    import uuid
+    import os
+    import shutil
+    from pathlib import Path
+    from util.file_utils import save_model
+    
+    print(f"[render_humanml3d] 애니메이션 파일 처리: {anim_file.name}")
 
     # 데이터 로드
     file_ext = Path(anim_file.name).suffix.lower()
+    data = None
+
     if file_ext == '.npy':
         npy = np.load(anim_file.name, allow_pickle=True)
-        if isinstance(npy, np.ndarray) and npy.dtype == np.dtype('O') and isinstance(npy.item(), dict):
+        print(f"npy= {type(npy)}, shape={npy.shape if hasattr(npy, 'shape') else 'None'}")
+        
+        # dict 타입 체크
+        if isinstance(npy, dict) and 'motion' in npy:
+            data = npy['motion']
+        elif isinstance(npy, np.ndarray) and npy.dtype == np.dtype('O') and isinstance(npy.item(), dict):
             if 'motion' in npy.item():
                 data = npy.item()['motion']
-        elif isinstance(npy, dict) and 'motion' in npy:
-            data = npy['motion']
+        else:
+            # 일반 ndarray인 경우
+            data = npy
             
     elif file_ext == '.npz':
         npz = np.load(anim_file.name, allow_pickle=True)
         # humanml3d 포맷에서 'motion' 또는 'poses' 키 사용
         if 'motion' in npz:
             data = npz['motion']
+            print(f"npz['motion'] 데이터 로드: {data.shape if hasattr(data, 'shape') else 'None'}")
         elif 'poses' in npz:
             data = npz['poses']
+            print(f"npz['poses'] 데이터 로드: {data.shape if hasattr(data, 'shape') else 'None'}")
         else:
+            print(f"npz 키: {list(npz.keys())}")
             data = None
-    else:
-        return '<div>지원하지 않는 파일 형식입니다.</div>'
-
+    
     if data is None:
+        print("[render_humanml3d] 데이터를 읽을 수 없습니다.")
         return '<div>데이터를 읽을 수 없습니다.</div>'
-
-    return humanml3d_viewer(data)
-
-
-def humanml3d_viewer(data):
-    import numpy as np
-    import json
+    
+    print(f"[render_humanml3d] 데이터 형태: {data.shape if hasattr(data, 'shape') else 'None'}")
 
     # (F, J, 3) 또는 (J, 3, F) 형태 지원
     if data.ndim == 4:
+        print(f"[render_humanml3d] 4D 데이터 감지, 첫번째 시퀀스 사용: {data.shape}")
         data = data[0]
+        
     if data.ndim == 3:
+        print(f"[render_humanml3d] 3D 데이터 감지: {data.shape}")
         if data.shape[0] == 22 and data.shape[1] == 3:
+            # (22, 3, F) -> (F, 22, 3)
+            print(f"[render_humanml3d] (22, 3, F) 형태 감지, 변환 중")
             data = np.transpose(data, (2, 0, 1))
+            print(f"[render_humanml3d] 변환 후 형태: {data.shape}")
         elif data.shape[1] == 22 and data.shape[2] == 3:
-            pass
+            # 이미 (F, 22, 3) 형태
+            print(f"[render_humanml3d] (F, 22, 3) 형태 감지, 변환 불필요")
         else:
-            return '<div>지원하지 않는 데이터 형태입니다.</div>'
+            print(f"[render_humanml3d] 지원하지 않는 데이터 형태: {data.shape}")
+            return f'<div>지원하지 않는 데이터 형태입니다: {data.shape}</div>'
     else:
-        return '<div>지원하지 않는 데이터 차원입니다.</div>'
+        print(f"[render_humanml3d] 지원하지 않는 데이터 차원: {data.ndim}")
+        return f'<div>지원하지 않는 데이터 차원입니다: {data.ndim}</div>'
 
     # NaN/Inf 방지
     data = np.nan_to_num(data)
-    frames, joints, _ = data.shape
 
-    # 본 연결 정보 (SMPL 22본 기준)
-    skeleton = [
-        [0,1],[1,4],[4,7],[7,10],
-        [0,2],[2,5],[5,8],[8,11],
-        [0,3],[3,6],[6,9],[9,12],[12,13],[13,16],[16,18],[18,20],
-        [12,14],[14,17],[17,19],[19,21],
-        [12,15]
-    ]
-    all_poses = data.tolist()
+    # 임시 NPY 파일로 저장
+    unique_id = uuid.uuid4().hex[:8]
+    MODELS_DIR = Path(__file__).parent.parent / "static" / "models"
+    MODELS_DIR.mkdir(exist_ok=True, parents=True)
+    temp_npy_path = MODELS_DIR / f"temp_humanml3d_{unique_id}.npy"
 
-    # 중심 계산 (첫 프레임 기준)
-    center = np.mean(data[0], axis=0).tolist()
-
-    skeleton_json = json.dumps(skeleton)
-    all_poses_json = json.dumps(all_poses)
-    center_json = json.dumps(center)
-
-    html = f'''
-    <div id="humanml3d_viewer" style="width:100%;height:500px;"></div>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/js/controls/OrbitControls.js"></script>
-    <script>
-    const container = document.getElementById('humanml3d_viewer');
-    container.innerHTML = '';
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x222222);
-
-    // 데이터
-    const skeleton = {skeleton_json};
-    const all_poses = {all_poses_json};
-    const center = {center_json};
-    let frame = 0;
-
-    // 카메라를 데이터 중심에 맞춤
-    const camera = new THREE.PerspectiveCamera(45, container.offsetWidth/container.offsetHeight, 0.01, 100);
-    camera.position.set(center[0], center[1]+1.5, center[2]+10);
-    camera.lookAt(center[0], center[1], center[2]);
-
-    const renderer = new THREE.WebGLRenderer({{antialias:true}});
-    renderer.setSize(container.offsetWidth, container.offsetHeight);
-    container.appendChild(renderer.domElement);
-
-    const controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.target.set(center[0], center[1], center[2]);
-    controls.update();
-
-    // 조명
-    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-    const light = new THREE.DirectionalLight(0xffffff, 0.7);
-    light.position.set(center[0], center[1]+2, center[2]+2);
-    scene.add(light);
-
-    // 본 라인 생성
-    const lineGeometry = new THREE.BufferGeometry();
-    const linePositions = new Float32Array(skeleton.length * 2 * 3);
-    lineGeometry.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
-    const lineMaterial = new THREE.LineBasicMaterial({{color:0x00ffcc}});
-    const skeletonLines = new THREE.LineSegments(lineGeometry, lineMaterial);
-    scene.add(skeletonLines);
-
-    // 관절 점 생성
-    const jointGeometry = new THREE.BufferGeometry();
-    const jointPositions = new Float32Array(all_poses[0].length * 3);
-    jointGeometry.setAttribute('position', new THREE.BufferAttribute(jointPositions, 3));
-    const jointMaterial = new THREE.PointsMaterial({{color:0xffcc00, size:0.05}});
-    const joints = new THREE.Points(jointGeometry, jointMaterial);
-    scene.add(joints);
-
-    // 애니메이션 루프
-    function updateFrame(f) {{
-        // 점 위치 갱신
-        for(let i=0; i<all_poses[0].length; i++) {{
-            jointPositions[i*3+0] = all_poses[f][i][0];
-            jointPositions[i*3+1] = all_poses[f][i][1];
-            jointPositions[i*3+2] = all_poses[f][i][2];
-        }}
-        jointGeometry.attributes.position.needsUpdate = true;
-
-        // 라인 위치 갱신
-        for(let i=0; i<skeleton.length; i++) {{
-            const [a, b] = skeleton[i];
-            linePositions[i*6+0] = all_poses[f][a][0];
-            linePositions[i*6+1] = all_poses[f][a][1];
-            linePositions[i*6+2] = all_poses[f][a][2];
-            linePositions[i*6+3] = all_poses[f][b][0];
-            linePositions[i*6+4] = all_poses[f][b][1];
-            linePositions[i*6+5] = all_poses[f][b][2];
-        }}
-        lineGeometry.attributes.position.needsUpdate = true;
-    }}
-
-    function animate() {{
-        requestAnimationFrame(animate);
-        updateFrame(frame);
-        frame = (frame+1)%all_poses.length;
-        renderer.render(scene, camera);
-    }}
-    animate();
-
-    window.addEventListener('resize',()=>{{
-        camera.aspect = container.offsetWidth/container.offsetHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(container.offsetWidth, container.offsetHeight);
-    }});
-    </script>
+    # 임시 파일로 저장
+    np.save(temp_npy_path, data)
+    print(f"[render_humanml3d] 임시 파일 저장: {temp_npy_path}")
+    
+    # 가상 파일 객체 생성 (save_model 함수 요구사항)
+    class MockFile:
+        def __init__(self, path):
+            self.name = path
+    
+    temp_file = MockFile(str(temp_npy_path))
+    
+    # viewer_template.html 파일 경로
+    VIEWER_PATH = Path(__file__).parent.parent / "static" / "viewer_template.html"
+    
+    # GLB 방식과 동일하게 save_model 사용하여 anim_url 생성
+    anim_url = save_model(temp_file, "anim", MODELS_DIR)
+    
+    # 임시 파일 자동 정리를 위한 스레드 시작
+    import threading
+    def cleanup_temp_file():
+        import time
+        time.sleep(300)  # 5분 후 정리
+        try:
+            if os.path.exists(temp_npy_path):
+                os.remove(temp_npy_path)
+                print(f"[render_humanml3d] 임시 파일 정리: {temp_npy_path}")
+        except Exception as e:
+            print(f"[render_humanml3d] 임시 파일 정리 실패: {e}")
+    
+    threading.Thread(target=cleanup_temp_file, daemon=True).start()
+    
+    # iframe으로 viewer_template.html 호출 (스킨 모델 없이 직접 호출)
+    # animType=humanml3d 파라미터를 전달하여 HumanML3D 로더가 호출되도록 함
+    viewer_url = f"/file={VIEWER_PATH}?anim={anim_url}&animType=humanml3d"
+    print(f"[render_humanml3d] viewer URL: {viewer_url}")
+    
+    return f'''
+    <div style="width: 100%; height: 500px; border-radius: 8px; overflow: hidden;">
+        <iframe id="humanml3d-viewer-frame" src="{viewer_url}" style="width: 100%; height: 100%; border: none;"></iframe>
+    </div>
+    <p style="margin-top: 8px; color: #666; font-size: 0.9em;">
+        마우스를 사용하여 모델을 회전하고 확대/축소할 수 있습니다.
+    </p>
     '''
-    return html
 
 def create_animation_tab(VIEWER_PATH, MODELS_DIR):
     """애니메이션 생성 탭 인터페이스 생성"""

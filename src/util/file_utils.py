@@ -296,19 +296,21 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
                                         "betas": [],
                                         "trans": trans_data.tolist()
                                     }
+
+                                    # 여기서 랜더링 코드 호출
+                                    return f"""
+                                    <div id="prompt-result">
+                                        <p style="color: green;">모션 생성 실패!</p>
+                                        <pre>생성 성공!!.</pre>
+                                    </div>"""
                                 else:
-                                    smpl_format = {
-                                        "pose": [],
-                                        "betas": [],
-                                        "trans": []
-                                    }
+                                    return f"""
+                                    <div id="prompt-result">
+                                        <p style="color: green;">모션 생성 실패!</p>
+                                        <pre>생성에 실패했습니다.</pre>
+                                    </div>
+                                    """
                                 
-                                return f"""
-                                <div id="prompt-result">
-                                    <p style="color: green;">모션 생성 완료!</p>
-                                    <pre>{json.dumps(smpl_format, indent=2, ensure_ascii=False)}</pre>
-                                </div>
-                                """
                             except Exception as e:
                                 return f"""
                                 <div id="prompt-result">
