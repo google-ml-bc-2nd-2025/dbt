@@ -12,6 +12,7 @@ import re
 from datetime import datetime
 import torch
 from util import text_parser
+from model.smpl import smpl_humanml3d_to_mixamo_index
 
 # 파일 경로를 파일 객체처럼 처리하기 위한 클래스 추가
 class FilePathWrapper:
@@ -318,7 +319,7 @@ def create_dataset_create_tab(models_dir):
                 frame_count = 60  # MotionCLIP 기본 프레임 수
                 
                 # MotionCLIP 포맷에 맞게 데이터 생성
-                pose = np.zeros((frame_count, 132), dtype=np.float32)  # [60, 132] 형태의 6D 포즈
+                pose = np.zeros((frame_count, 132), dtype=np.float32)  # [60, 132] 형태의 6D 포즈   [frame, 22, 3]
                 trans = np.zeros((frame_count, 3), dtype=np.float32)   # [60, 3] 형태의 위치
                 betas = np.zeros(10, dtype=np.float32)                 # [10] 형태의 체형 파라미터
                 
@@ -363,6 +364,139 @@ def create_dataset_create_tab(models_dir):
         else:
             return generate_result, updated_rows
 
+    def get_glb_info(file_path):
+        import pygltflib
+        from struct import unpack
+        from model.smpl import smpl_humanml3d_to_mixamo_index  # SMPL 본 이름 리스트
+
+        try:
+            gltf = pygltflib.GLTF2().load(file_path)
+            if gltf.animations and len(gltf.animations) > 0:
+
+                # 첫 번째 애니메이션 정보
+                anim = gltf.animations[0]
+                time_values = []
+                frame_count = 0
+                frame_rate = 30.0  # 기본 프레임 레이트 (필요시 수정 가능)
+                # 타임스탬프 데이터 추출하여 프레임 레이트 계산
+                if anim.samplers and len(anim.samplers) > 0:
+                    # 첫 번째 샘플러에서 시간 데이터 추출
+                    time_sampler = anim.samplers[0]
+                    time_accessor = gltf.accessors[time_sampler.input]
+                    time_data = get_accessor_data(gltf, time_accessor)
+                    
+                    if time_data is not None and len(time_data) > 1:
+                        # 첫 번째와 마지막 타임스탬프
+                        start_time = time_data[0]
+                        end_time = time_data[-1]
+                        duration = end_time - start_time
+                        
+                        # 타임스탬프의 개수로 프레임 수 결정
+                        frame_count = len(time_data)
+                        
+                        # 전체 지속 시간에 따른 프레임 레이트 계산 (프레임 간격이 일정하다고 가정)
+                        if duration > 0:
+                            frame_rate = (frame_count - 1) / duration
+                            print(f"애니메이션 지속 시간: {duration:.2f}초, 프레임 수: {frame_count}, 프레임 레이트: {frame_rate:.2f}fps")
+                        else:
+                            # 지속 시간이 0이면 기본값 사용
+                            print(f"애니메이션 지속 시간이 0입니다. 기본 프레임 레이트 {frame_rate}fps 사용")
+                    else:
+                        # 샘플러에 시간 데이터가 없으면 출력 데이터 개수로 추정
+                        frame_count = int(anim.samplers[0].output.count / 3)  # 각 샘플러의 출력 개수로 프레임 수 추정
+                        print(f"시간 데이터가 없습니다. 출력 데이터에서 프레임 수를 추정: {frame_count}프레임")
+                else:
+                    frame_count = 0
+                    print("애니메이션에 샘플러가 없습니다.")
+                
+                joint_positions = np.zeros((frame_count, len(smpl_humanml3d_to_mixamo_index), 3), dtype=np.float32)
+
+                # 모든 시간값(타임스탬프) 수집
+                for channel in anim.channels:
+                    if channel.target.path == 'translation':  # 위치 애니메이션만 고려
+                        sampler = anim.samplers[channel.sampler]
+                        input_accessor = gltf.accessors[sampler.input]
+                        time_data = get_accessor_data(gltf, input_accessor)
+                        if time_data is not None:
+                            time_values.extend(time_data.tolist())
+                
+                # 중복 제거 및 정렬
+                time_values = sorted(set(time_values))
+                
+                # GLB 노드와 SMPL 본 간의 매핑 생성
+                node_to_smpl_mapping = {}
+                for i, node in enumerate(gltf.nodes):
+                    node_name = getattr(node, 'name', f'node_{i}')
+                    # 노드 이름을 SMPL 본 이름과 매칭
+                    for smpl_idx, smpl_name in enumerate(smpl_humanml3d_to_mixamo_index):
+                        # 이름 유사성으로 매칭 (대소문자 무시, 일부만 포함되어도 매칭)
+                        if smpl_name.lower() == node_name.lower(): #  or node_name.lower() in smpl_name.lower():
+                            node_to_smpl_mapping[i] = smpl_idx
+                            print(f"매핑: GLB 노드 '{node_name}' -> SMPL 본 '{smpl_name}'")
+                            break
+
+                print(f"매핑된 본 수: {len(node_to_smpl_mapping)}/{len(smpl_humanml3d_to_mixamo_index)}")
+    
+                # 모든 시간값(타임스탬프) 수집
+                for channel in anim.channels:
+                    if channel.target.path == 'translation':  # 위치 애니메이션만 고려
+                        sampler = anim.samplers[channel.sampler]
+                        input_accessor = gltf.accessors[sampler.input]
+                        time_data = get_accessor_data(gltf, input_accessor)
+                        if time_data is not None:
+                            time_values.extend(time_data.tolist())
+                
+                # 중복 제거 및 정렬
+                time_values = sorted(set(time_values))
+                
+                # GLB 노드와 SMPL 본 간의 매핑 생성
+                node_to_smpl_mapping = {}
+                for i, node in enumerate(gltf.nodes):
+                    node_name = getattr(node, 'name', f'node_{i}')
+                    # 노드 이름을 SMPL 본 이름과 매칭
+                    for smpl_idx, smpl_name in enumerate(smpl_humanml3d_to_mixamo_index):
+                        # 이름 유사성으로 매칭 (대소문자 무시, 일부만 포함되어도 매칭)
+                        if smpl_name.lower() == node_name.lower():
+                            node_to_smpl_mapping[i] = smpl_idx
+                            print(f"매핑: GLB 노드 '{node_name}' -> SMPL 본 '{smpl_name}'")
+                            break
+                
+                print(f"매핑된 본 수: {len(node_to_smpl_mapping)}/{len(smpl_humanml3d_to_mixamo_index)}")
+                
+                # 각 타임스탬프에 대해 모든 관절 위치 계산
+                for time_point in time_values:
+                    # SMPL 본 구조에 맞는 배열 생성 (24개 본, 각각 [x,y,z] 위치)
+                    smpl_frame_positions = np.zeros((len(smpl_humanml3d_to_mixamo_index), 3), dtype=np.float32)
+                    
+                    # 매핑된 GLB 노드에서 위치값 가져오기
+                    for node_idx, smpl_idx in node_to_smpl_mapping.items():
+                        position = calculate_node_position_at_time(gltf, node_idx, time_point)
+                        smpl_frame_positions[smpl_idx] = position
+                    
+                    # 매핑되지 않은 본은 기본 위치 또는 인접한 본 위치 기반으로 추정
+                    # (예: 부모 본 + 오프셋)
+                    for smpl_idx, smpl_name in enumerate(smpl_humanml3d_to_mixamo_index):
+                        if not any(v == smpl_idx for v in node_to_smpl_mapping.values()):
+                            print(f"매핑되지 않은 SMPL 본: {smpl_name}, 기본값 사용")
+                            # 기본값 사용 (0,0,0) - 이미 zeros로 초기화되어 있음
+                            # 필요시 부모 본 기반으로 위치 추정 가능
+                    
+                    # Get current frame index
+                    frame_idx = time_values.index(time_point)
+                    # Assign joint positions to the pre-allocated array at the correct frame index
+                    joint_positions[frame_idx] = smpl_frame_positions
+
+                print(f"추출된 프레임 수: {frame_count}, 각 프레임당 본 수: {len(smpl_humanml3d_to_mixamo_index)}")
+                return frame_count, joint_positions
+            else:
+                print(f"파일 {Path(file_path).name}에 애니메이션 정보가 없습니다.")
+                return 0, None
+        except Exception as e:
+            print(f"GLB 파일에서 프레임 수 추출 오류: {e}")
+            import traceback
+            traceback.print_exc()
+            return 0, None
+
     # 통합 학습 데이터(PT) 생성 함수 추가
     def generate_unified_training_file(directory):
         try:
@@ -395,25 +529,32 @@ def create_dataset_create_tab(models_dir):
                     # 파일명에서 설명 생성
                     name_parts = re.split(r'[ _\-.]', Path(file_path).stem)
                     description = ', '.join([part for part in name_parts if part])
-                
+                    with open(txt_file_path, 'w', encoding='utf-8') as f:
+                        f.write(f'{description}.{text_parser.encode_tagged(description.strip())}#0.0#0.0')
                 try:
                     # 여기서 실제 GLB/FBX 변환 코드 구현 필요
                     # 임시 구현: 더미 데이터 생성
-                    frame_count = 60
-                    pose = np.random.normal(0, 0.1, (frame_count, 132)).astype(np.float32)
-                    trans = np.random.normal(0, 0.1, (frame_count, 3)).astype(np.float32)
-                    
-                    # 데이터 수집
-                    all_poses.append(pose)
-                    all_trans.append(trans)
-                    
+
+                    # GLB 파일에서 실제 translation 데이터를 추출
+                    if file_ext == '.glb':
+                        frame_count, joint_positions = get_glb_info(file_path)
+                    else:
+                        # FBX 또는 다른 형식은 더미 데이터 사용
+                        frame_count = 1
+                        joint_positions = np.zeros((frame_count, 22, 3), dtype=np.float32)  # [frame_count, 22 joints, 3 coordinates]
+
                     # 개별 모션 정보 저장
                     motion = {
-                        'pose': torch.tensor(pose),
-                        'trans': torch.tensor(trans),
-                        'length': frame_count,
+                        'pose': joint_positions.tolist(),
                         'text': description
                     }
+                    # 모션 데이터의 사이즈 계산
+                    pose_size_bytes = joint_positions.size * joint_positions.itemsize
+                    text_size_bytes = len(motion['text'].encode('utf-8')) if isinstance(motion['text'], str) else 0
+                    pose_size_bytes += text_size_bytes
+                    size_mb = pose_size_bytes / (1024 * 1024)
+                    print(f"모션 데이터 크기: {pose_size_bytes} bytes, frame_count: {frame_count}, pose itemsize = {joint_positions.itemsize}")
+
                     motions.append(motion)
                     
                 except Exception as e:
@@ -423,36 +564,20 @@ def create_dataset_create_tab(models_dir):
             if not motions:
                 return "처리할 수 있는 파일이 없습니다."
             
-            # 표준화를 위한 통계 계산
-            all_poses_np = np.concatenate(all_poses, axis=0)
-            all_trans_np = np.concatenate(all_trans, axis=0)
-            
-            mean_pose = np.mean(all_poses_np, axis=0)
-            std_pose = np.std(all_poses_np, axis=0)
-            mean_trans = np.mean(all_trans_np, axis=0)
-            std_trans = np.std(all_trans_np, axis=0)
-            
-            # MotionCLIP 포맷의 데이터셋 생성
             dataset = {
                 'motions': motions,
-                'mean': {
-                    'pose': torch.tensor(mean_pose),
-                    'trans': torch.tensor(mean_trans)
-                },
-                'std': {
-                    'pose': torch.tensor(std_pose),
-                    'trans': torch.tensor(std_trans)
-                },
                 'metadata': {
                     'file_count': len(motions),
-                    'total_frames': sum(m['length'] for m in motions),
+                    'total_frames': sum(len(m) for m in motions),
                     'created_at': timestamp
                 }
             }
-            
-            # PyTorch 파일로 저장
-            torch.save(dataset, output_path)
-            
+            json_output_path = output_path.with_suffix('.json')
+            with open(json_output_path, 'w', encoding='utf-8') as f:
+                f.write(json.dumps(dataset, ensure_ascii=False, indent=4))
+
+            print(f"PyTorch dataset saved to {output_path}")
+
             return f"통합 학습 파일이 생성되었습니다: {output_path}\n총 {len(motions)}개 애니메이션 데이터 포함"
         except Exception as e:
             print(f"통합 학습 파일 생성 중 오류: {e}")
@@ -648,3 +773,230 @@ if __name__ == "__main__":
     with gr.Blocks() as demo:
         create_dataset_create_tab(".")
     demo.launch()
+
+
+def calculate_node_position_at_time(gltf, node_idx, time_point):
+    """
+    특정 시간에 해당 노드의 글로벌 위치를 계산합니다.
+    
+    Args:
+        gltf: pygltflib로 로드된 GLB 파일
+        node_idx: 위치를 계산할 노드의 인덱스
+        time_point: 위치를 계산할 시간점(초)
+    
+    Returns:
+        계산된 해당 시간에서의 노드 위치 (x, y, z)
+    """
+    try:
+        node = gltf.nodes[node_idx]
+        position = None
+        
+        # 기본 위치가 설정되어 있으면 사용
+        if hasattr(node, 'translation') and node.translation:
+            position = np.array(node.translation, dtype=np.float32)
+        else:
+            position = np.zeros(3, dtype=np.float32)
+        
+        # 애니메이션 채널에서 보간된 위치 찾기
+        for anim_idx, anim in enumerate(gltf.animations):
+            for channel_idx, channel in enumerate(anim.channels):
+                # 현재 노드에 적용되는 채널인지 확인
+                if channel.target.node == node_idx and channel.target.path == 'translation':
+                    sampler = anim.samplers[channel.sampler]
+                    
+                    # 샘플러의 입력(시간) 및 출력(위치값) 접근을 위한 accessor 인덱스
+                    input_accessor_idx = sampler.input
+                    output_accessor_idx = sampler.output
+                    
+                    # accessor가 유효한지 확인
+                    if (input_accessor_idx < len(gltf.accessors) and 
+                        output_accessor_idx < len(gltf.accessors)):
+                        
+                        # 시간 데이터 접근
+                        time_accessor = gltf.accessors[input_accessor_idx]
+                        time_view = get_accessor_data(gltf, time_accessor)
+                        
+                        # 위치 데이터 접근
+                        pos_accessor = gltf.accessors[output_accessor_idx]
+                        pos_view = get_accessor_data(gltf, pos_accessor)
+                        
+                        if time_view is not None and pos_view is not None:
+                            # 보간 방식 결정 (LINEAR 또는 STEP)
+                            interpolation = sampler.interpolation if hasattr(sampler, 'interpolation') else 'LINEAR'
+                            
+                            # 값 보간
+                            if interpolation == 'STEP':
+                                # STEP 보간: 가장 가까운 이전 키프레임의 값 사용
+                                idx = np.searchsorted(time_view, time_point, side='right') - 1
+                                if idx >= 0 and idx < len(pos_view):
+                                    position = np.array(pos_view[idx], dtype=np.float32)
+                            else:
+                                # LINEAR 보간: 두 키프레임 사이 선형 보간
+                                idx = np.searchsorted(time_view, time_point, side='right')
+                                
+                                # 첫 프레임보다 이전이면 첫 프레임 값 사용
+                                if idx == 0:
+                                    position = np.array(pos_view[0], dtype=np.float32)
+                                # 마지막 프레임 이후면 마지막 프레임 값 사용
+                                elif idx >= len(time_view):
+                                    position = np.array(pos_view[-1], dtype=np.float32)
+                                # 두 프레임 사이면 보간
+                                else:
+                                    t0, t1 = time_view[idx-1], time_view[idx]
+                                    p0, p1 = np.array(pos_view[idx-1]), np.array(pos_view[idx])
+                                    
+                                    # 보간 계수(0~1)
+                                    alpha = (time_point - t0) / (t1 - t0) if t1 > t0 else 0
+                                    position = p0 + alpha * (p1 - p0)
+        
+        # 부모 노드의 변환을 재귀적으로 적용하여 글로벌 위치 계산
+        position = apply_parent_transforms(gltf, node_idx, position, time_point)
+        
+        return position.tolist()
+    
+    except Exception as e:
+        print(f"위치 계산 중 오류 발생: {e}")
+        return [0, 0, 0]  # 오류 시 기본 위치
+
+def get_accessor_data(gltf, accessor):
+    """
+    GLTF accessor에서 실제 데이터를 추출합니다.
+    
+    Args:
+        gltf: pygltflib로 로드된 GLB 파일
+        accessor: 데이터에 접근하기 위한 accessor 객체
+    
+    Returns:
+        accessor가 가리키는 데이터 배열, 또는 None(오류 시)
+    """
+    try:
+        # 버퍼뷰 인덱스 확인
+        buffer_view_idx = accessor.bufferView
+        if buffer_view_idx is None or buffer_view_idx >= len(gltf.bufferViews):
+            return None
+            
+        buffer_view = gltf.bufferViews[buffer_view_idx]
+        
+        # 버퍼 인덱스 확인
+        buffer_idx = buffer_view.buffer
+        if buffer_idx is None or buffer_idx >= len(gltf.buffers):
+            return None
+            
+        # 버퍼 데이터 접근
+        buffer_data = gltf.get_data_from_buffer_uri(gltf.buffers[buffer_idx].uri)
+        if not buffer_data:
+            # 내장 GLB 버퍼의 경우
+            buffer_data = gltf.binary_blob()
+        
+        # 오프셋 및 길이 계산
+        offset = buffer_view.byteOffset if hasattr(buffer_view, 'byteOffset') else 0
+        acc_offset = accessor.byteOffset if hasattr(accessor, 'byteOffset') else 0
+        total_offset = offset + acc_offset
+        
+        # 데이터 타입과 요소 크기 결정
+        component_type = accessor.componentType  # 5126: FLOAT, 5125: UNSIGNED_INT 등
+        type_str = accessor.type  # 'VEC3', 'SCALAR' 등
+        
+        # 타입별 numpy 데이터 타입 및 요소 수 결정
+        type_map = {
+            5120: np.int8,    # BYTE
+            5121: np.uint8,   # UNSIGNED_BYTE
+            5122: np.int16,   # SHORT
+            5123: np.uint16,  # UNSIGNED_SHORT
+            5125: np.uint32,  # UNSIGNED_INT
+            5126: np.float32  # FLOAT
+        }
+        
+        count_map = {
+            'SCALAR': 1,
+            'VEC2': 2,
+            'VEC3': 3,
+            'VEC4': 4,
+            'MAT2': 4,
+            'MAT3': 9,
+            'MAT4': 16
+        }
+        
+        if component_type not in type_map or type_str not in count_map:
+            return None
+            
+        np_type = type_map[component_type]
+        count = count_map[type_str]
+        
+        # 바이너리 데이터를 numpy 배열로 변환
+        element_size = np.dtype(np_type).itemsize * count
+        shape = (accessor.count,) if count == 1 else (accessor.count, count)
+        
+        # 데이터 버퍼에서 필요한 부분만 뽑아서 numpy 배열로 변환
+        raw_data = buffer_data[total_offset:total_offset + accessor.count * element_size]
+        
+        # 1차원 배열로 먼저 변환 후 형태 변경
+        flat_array = np.frombuffer(raw_data, dtype=np_type)
+        
+        # SCALAR인 경우는 그대로, 아니면 지정된 형태로 변환
+        if count == 1:
+            return flat_array
+        else:
+            return flat_array.reshape(shape)
+    
+    except Exception as e:
+        print(f"데이터 추출 중 오류: {e}")
+        return None
+
+def apply_parent_transforms(gltf, node_idx, position, time_point):
+    """
+    부모 노드의 변환을 재귀적으로 적용하여 글로벌 위치를 계산합니다.
+    
+    Args:
+        gltf: pygltflib로 로드된 GLB 파일
+        node_idx: 위치를 계산할 노드의 인덱스
+        position: 로컬 위치 (NumPy 배열)
+        time_point: 위치를 계산할 시간점(초)
+    
+    Returns:
+        글로벌 위치 (NumPy 배열)
+    """
+    try:
+        # 부모 노드 찾기
+        parent_idx = -1
+        for i, node in enumerate(gltf.nodes):
+            if hasattr(node, 'children') and node.children and node_idx in node.children:
+                parent_idx = i
+                break
+        
+        # 부모가 없으면 현재 위치 반환
+        if parent_idx == -1:
+            return position
+        
+        # 부모 노드의 변환(translation, rotation, scale) 적용
+        parent = gltf.nodes[parent_idx]
+        
+        # 부모의 로컬 변환 가져오기
+        parent_translation = np.array(parent.translation) if hasattr(parent, 'translation') and parent.translation else np.zeros(3)
+        parent_rotation = np.array(parent.rotation) if hasattr(parent, 'rotation') and parent.rotation else np.array([0, 0, 0, 1])  # 쿼터니언
+        parent_scale = np.array(parent.scale) if hasattr(parent, 'scale') and parent.scale else np.ones(3)
+        
+        # 부모 노드의 애니메이션 변환 적용 (필요시)
+        # 이 부분은 더 복잡하므로 별도 함수로 구현 가능
+        
+        # 위치에 적용: 스케일 → 회전 → 이동 순서로 적용
+        # 스케일 적용
+        scaled_position = position * parent_scale
+        
+        # 회전 적용 (쿼터니언)
+        from scipy.spatial.transform import Rotation as R
+        if np.sum(parent_rotation) != 1:  # 단위 쿼터니언이 아닌 경우만 적용
+            rot = R.from_quat(parent_rotation)
+            rotated_position = rot.apply(scaled_position)
+        else:
+            rotated_position = scaled_position
+            
+        # 이동 적용
+        global_position = rotated_position + parent_translation
+        
+        # 재귀적으로 상위 부모들의 변환도 적용
+        return apply_parent_transforms(gltf, parent_idx, global_position, time_point)
+        
+    except Exception as e:
+        print(f"부모 변환 적용 중 오류: {e}")
+        return position
