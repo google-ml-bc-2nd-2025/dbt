@@ -8,6 +8,170 @@ import uuid  # uuid 모듈 추가
 from pathlib import Path
 from util.file_utils import apply_animation, send_prompt
 from render.smpl_animation import apply_to_glb
+import numpy as np
+import base64
+import json
+from io import BytesIO
+from pathlib import Path
+
+def render_humanml3d(anim_file):
+
+    # 데이터 로드
+    file_ext = Path(anim_file.name).suffix.lower()
+    if file_ext == '.npy':
+        npy = np.load(anim_file.name, allow_pickle=True)
+        if isinstance(npy, np.ndarray) and npy.dtype == np.dtype('O') and isinstance(npy.item(), dict):
+            if 'motion' in npy.item():
+                data = npy.item()['motion']
+        elif isinstance(npy, dict) and 'motion' in npy:
+            data = npy['motion']
+            
+    elif file_ext == '.npz':
+        npz = np.load(anim_file.name, allow_pickle=True)
+        # humanml3d 포맷에서 'motion' 또는 'poses' 키 사용
+        if 'motion' in npz:
+            data = npz['motion']
+        elif 'poses' in npz:
+            data = npz['poses']
+        else:
+            data = None
+    else:
+        return '<div>지원하지 않는 파일 형식입니다.</div>'
+
+    if data is None:
+        return '<div>데이터를 읽을 수 없습니다.</div>'
+
+    return humanml3d_viewer(data)
+
+
+def humanml3d_viewer(data):
+    import numpy as np
+    import json
+
+    # (F, J, 3) 또는 (J, 3, F) 형태 지원
+    if data.ndim == 4:
+        data = data[0]
+    if data.ndim == 3:
+        if data.shape[0] == 22 and data.shape[1] == 3:
+            data = np.transpose(data, (2, 0, 1))
+        elif data.shape[1] == 22 and data.shape[2] == 3:
+            pass
+        else:
+            return '<div>지원하지 않는 데이터 형태입니다.</div>'
+    else:
+        return '<div>지원하지 않는 데이터 차원입니다.</div>'
+
+    # NaN/Inf 방지
+    data = np.nan_to_num(data)
+    frames, joints, _ = data.shape
+
+    # 본 연결 정보 (SMPL 22본 기준)
+    skeleton = [
+        [0,1],[1,4],[4,7],[7,10],
+        [0,2],[2,5],[5,8],[8,11],
+        [0,3],[3,6],[6,9],[9,12],[12,13],[13,16],[16,18],[18,20],
+        [12,14],[14,17],[17,19],[19,21],
+        [12,15]
+    ]
+    all_poses = data.tolist()
+
+    # 중심 계산 (첫 프레임 기준)
+    center = np.mean(data[0], axis=0).tolist()
+
+    skeleton_json = json.dumps(skeleton)
+    all_poses_json = json.dumps(all_poses)
+    center_json = json.dumps(center)
+
+    html = f'''
+    <div id="humanml3d_viewer" style="width:100%;height:500px;"></div>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/js/controls/OrbitControls.js"></script>
+    <script>
+    const container = document.getElementById('humanml3d_viewer');
+    container.innerHTML = '';
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x222222);
+
+    // 데이터
+    const skeleton = {skeleton_json};
+    const all_poses = {all_poses_json};
+    const center = {center_json};
+    let frame = 0;
+
+    // 카메라를 데이터 중심에 맞춤
+    const camera = new THREE.PerspectiveCamera(45, container.offsetWidth/container.offsetHeight, 0.01, 100);
+    camera.position.set(center[0], center[1]+1.5, center[2]+10);
+    camera.lookAt(center[0], center[1], center[2]);
+
+    const renderer = new THREE.WebGLRenderer({{antialias:true}});
+    renderer.setSize(container.offsetWidth, container.offsetHeight);
+    container.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.target.set(center[0], center[1], center[2]);
+    controls.update();
+
+    // 조명
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const light = new THREE.DirectionalLight(0xffffff, 0.7);
+    light.position.set(center[0], center[1]+2, center[2]+2);
+    scene.add(light);
+
+    // 본 라인 생성
+    const lineGeometry = new THREE.BufferGeometry();
+    const linePositions = new Float32Array(skeleton.length * 2 * 3);
+    lineGeometry.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+    const lineMaterial = new THREE.LineBasicMaterial({{color:0x00ffcc}});
+    const skeletonLines = new THREE.LineSegments(lineGeometry, lineMaterial);
+    scene.add(skeletonLines);
+
+    // 관절 점 생성
+    const jointGeometry = new THREE.BufferGeometry();
+    const jointPositions = new Float32Array(all_poses[0].length * 3);
+    jointGeometry.setAttribute('position', new THREE.BufferAttribute(jointPositions, 3));
+    const jointMaterial = new THREE.PointsMaterial({{color:0xffcc00, size:0.05}});
+    const joints = new THREE.Points(jointGeometry, jointMaterial);
+    scene.add(joints);
+
+    // 애니메이션 루프
+    function updateFrame(f) {{
+        // 점 위치 갱신
+        for(let i=0; i<all_poses[0].length; i++) {{
+            jointPositions[i*3+0] = all_poses[f][i][0];
+            jointPositions[i*3+1] = all_poses[f][i][1];
+            jointPositions[i*3+2] = all_poses[f][i][2];
+        }}
+        jointGeometry.attributes.position.needsUpdate = true;
+
+        // 라인 위치 갱신
+        for(let i=0; i<skeleton.length; i++) {{
+            const [a, b] = skeleton[i];
+            linePositions[i*6+0] = all_poses[f][a][0];
+            linePositions[i*6+1] = all_poses[f][a][1];
+            linePositions[i*6+2] = all_poses[f][a][2];
+            linePositions[i*6+3] = all_poses[f][b][0];
+            linePositions[i*6+4] = all_poses[f][b][1];
+            linePositions[i*6+5] = all_poses[f][b][2];
+        }}
+        lineGeometry.attributes.position.needsUpdate = true;
+    }}
+
+    function animate() {{
+        requestAnimationFrame(animate);
+        updateFrame(frame);
+        frame = (frame+1)%all_poses.length;
+        renderer.render(scene, camera);
+    }}
+    animate();
+
+    window.addEventListener('resize',()=>{{
+        camera.aspect = container.offsetWidth/container.offsetHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.offsetWidth, container.offsetHeight);
+    }});
+    </script>
+    '''
+    return html
 
 def create_animation_tab(VIEWER_PATH, MODELS_DIR):
     """애니메이션 생성 탭 인터페이스 생성"""
@@ -86,45 +250,11 @@ def create_animation_tab(VIEWER_PATH, MODELS_DIR):
             # NPY 또는 NPZ 파일 처리 (SMPL 애니메이션)
             if file_ext in ['.npy', '.npz']:
                 try:
-                    # import 문 추가
-                    import numpy as np
-                    from converter.convert_mdm_to_glb import create_improved_glb_animation
-
-                    # 애니메이션 데이터 로드 (MDM 형식)
-                    motion_data = np.load(anim.name, allow_pickle=True)
-                    
-                    # motion 키가 있는지 확인
-                    if isinstance(motion_data, np.ndarray) and motion_data.dtype == np.dtype('O') and isinstance(motion_data.item(), dict):
-                        if 'motion' in motion_data.item():
-                            motion_data = motion_data.item()['motion']
-                    elif isinstance(motion_data, dict) and 'motion' in motion_data:
-                        motion_data = motion_data['motion']
-                        
-                    print(f"Motion 데이터 형태: {type(motion_data)}")
-                    if isinstance(motion_data, np.ndarray):
-                        print(f"Shape: {motion_data.shape}, 차원: {motion_data.ndim}")
-                        
-                    # 애니메이션을 스킨에 직접 적용 (새 함수 사용)
-                    unique_id = str(uuid.uuid4())[:8]
-                    result_filename = f"anim_{unique_id}.glb"
-                    result_path = os.path.join(MODELS_DIR, result_filename)
-                    
-                    # 새 함수 호출 - 미리 로드된 스킨에 애니메이션 적용
-                    output_path = create_improved_glb_animation(motion_data, result_path, base_glb_path=skin.name)
-                    
-                    if output_path:
-                        # 애니메이션 적용된 GLB 모델만 뷰어에 전달
-                        from types import SimpleNamespace
-                        anim_glb = SimpleNamespace()
-                        anim_glb.name = output_path
-                        return apply_animation(skin, anim_glb, VIEWER_PATH, MODELS_DIR)
-                    else:
-                        return "애니메이션 적용 실패"
-                        
+                    return render_humanml3d(anim)
                 except Exception as e:
                     import traceback
                     traceback.print_exc()
-                    return f"SMPL 애니메이션 적용 오류: {str(e)}"
+                    return f"SMPL 애니메이션 미리보기 오류: {str(e)}"
             
             # 기존 GLB/BVH 파일 처리
             print(f"skin = {skin}")
