@@ -249,18 +249,18 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
                         if current_status != last_state:
                             print(f"작업 상태 변경: {last_state} -> {current_status}")
                             last_state = current_status
-                        
+
                         # None 상태나 processing 상태일 때는 계속 대기
                         if current_status is None or current_status == 'processing':
                             time.sleep(3)  # 3초 대기
                             continue
-                        
+
                         if current_status == 'completed':
                             # 모션 데이터 조회
                             motion_data = status_data.get('data', {}).get('motion', {})
                             print(f"motion_data = {motion_data}")
                             print(f"status_data = {status_data}")
-                            
+
                             try:
                                 # motion_data가 문자열인 경우 JSON으로 파싱
                                 if isinstance(motion_data, str):
@@ -296,6 +296,14 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
                                         "betas": [],
                                         "trans": trans_data.tolist()
                                     }
+                                    # Modify pose data to use only first 22 joints (from 24)
+                                    if pose_data.shape[1] == 24:
+                                        print(f"수정 전 pose 데이터 형태: {pose_data.shape}")
+                                        pose_data = pose_data[..., :22, :]  # Select only first 22 joints
+                                        print(f"수정 후 pose 데이터 형태: {pose_data.shape}")
+
+                                    # Update the SMPL format with modified pose data
+                                    smpl_format["pose"] = pose_data.tolist()
                                     # 임시 파일로 numpy 데이터 저장
                                     with tempfile.NamedTemporaryFile(suffix='.npy', delete=False) as tmp_file:
                                         tmp_path = tmp_file.name
