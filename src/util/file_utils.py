@@ -238,6 +238,7 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
                                 if 'data' in motion_data:
                                     import base64
                                     import numpy as np
+                                    from scipy.spatial.transform import Rotation as R
                                     
                                     # base64 디코딩
                                     decoded_data = base64.b64decode(motion_data['data'])
@@ -264,26 +265,28 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
                                         "betas": [],
                                         "trans": trans_data.tolist()
                                     }
-                                    # Modify pose data to use only first 22 joints (from 24)
                                     if pose_data.shape[2] == 24:
                                         print(f"수정 전 pose 데이터 형태: {pose_data.shape}")
-                                        pose_data = pose_data[..., :22, :]  # Select only first 22 joints
-                                        # Convert pose data to format used by HumanML3D
-                                        # From axis-angle to 6D rotation representation format
-                                        import scipy.spatial.transform as R
-                                        pose_data = pose_data.reshape(pose_data.shape[0], pose_data.shape[1], -1, 3)  # Ensure it's in shape (batch, frames, joints, 3)
-                                        batch_size, n_frames, n_joints, _ = pose_data.shape
-                                        pose_data_6d = np.zeros((batch_size, n_frames, n_joints * 6), dtype=np.float32)
+                                        pose_data = pose_data[..., :22, :] 
+                                        pose_data = pose_data[0]
+                                        # Convert SMPL format to HumanML3D format
+                                        # In SMPL, rotations are in axis-angle format
+                                        # We need to convert to match HumanML3D joint orientation
 
-                                        for b in range(batch_size):
-                                            for f in range(n_frames):
-                                                for j in range(n_joints):
-                                                    # Convert axis-angle to rotation matrix, then to 6D representation
-                                                    rotmat = R.Rotation.from_rotvec(pose_data[b, f, j]).as_matrix()  # (3, 3)
-                                                    rot_6d = rotmat[:, :2].flatten()  # Take first two columns and flatten to 6 values
-                                                    pose_data_6d[b, f, j*6:(j+1)*6] = rot_6d
+                                        # Convert axis-angle to rotation matrices
+                                        rot_matrices = R.from_rotvec(pose_data.reshape(-1, 3)).as_matrix()
+                                        rot_matrices = rot_matrices.reshape(pose_data.shape[0], pose_data.shape[1], 3, 3)
 
-                                        pose_data = pose_data_6d  # Replace with 6D representation
+                                        # Apply rotation offsets to match HumanML3D convention
+                                        # X rotation offset of -π/2 on specific joints (could be adjusted based on testing)
+                                        for joint_idx in [7, 8, 10, 11]:  # ankles and feet
+                                            offset_rot = R.from_euler('x', -np.pi/2).as_matrix()
+                                            rot_matrices[:, joint_idx] = rot_matrices[:, joint_idx] @ offset_rot
+
+                                        # Convert back to axis-angle representation
+                                        pose_data = R.from_matrix(rot_matrices.reshape(-1, 3, 3)).as_rotvec()
+                                        pose_data = pose_data.reshape(-1, 22, 3)
+
                                         print(f"수정 후 pose 데이터 형태: {pose_data.shape}")
 
                                     # Update the SMPL format with modified pose data
@@ -292,7 +295,7 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
                                     with tempfile.NamedTemporaryFile(suffix='.npy', delete=False) as tmp_file:
                                         tmp_path = tmp_file.name
                                         # 변환된 pose 데이터를 numpy 파일로 저장
-                                        np.save(tmp_path, pose_data[0])
+                                        np.save(tmp_path, pose_data)
                                         print(f"애니메이션 데이터를 임시 파일에 저장: {tmp_path}")
 
                                     # 임시 파일을 이용하여 애니메이션 처리
