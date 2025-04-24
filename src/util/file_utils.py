@@ -265,7 +265,7 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
                                         "trans": trans_data.tolist()
                                     }
                                     # Modify pose data to use only first 22 joints (from 24)
-                                    if pose_data.shape[1] == 24:
+                                    if pose_data.shape[2] == 24:
                                         print(f"수정 전 pose 데이터 형태: {pose_data.shape}")
                                         pose_data = pose_data[..., :22, :]  # Select only first 22 joints
                                         print(f"수정 후 pose 데이터 형태: {pose_data.shape}")
