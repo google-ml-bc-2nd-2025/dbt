@@ -424,7 +424,6 @@ def process_animation_in_generated(anim_path):
                     display: flex; justify-content: center; align-items: center; color: #ccc;">
             <div style="text-align: center;">
                 <h3>기본 포즈 skin 파일없음</h3>
-                <p>{str(e)}</p>
             </div>
         </div>
         """
