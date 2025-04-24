@@ -324,8 +324,6 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
                                             <p style="color: #666; font-size: 0.9em;">{str(e)}</p>
                                         </div>
                                         """
-                                    finally:
-                                        os.remove(tmp_path)
                                 else:
                                     return f"""
                                     <div id="prompt-result">
