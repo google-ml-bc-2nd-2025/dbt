@@ -9,6 +9,7 @@ import numpy as np
 from pathlib import Path
 import tempfile
 from render.smpl_animation import apply_to_glb
+from page.animation_tab import render_humanml3d
 import requests
 import json
 import time
@@ -314,7 +315,7 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
                                     # 임시 파일을 이용하여 애니메이션 처리
                                     try:
                                         print(f"애니메이션 변환 성공: {tmp_path}")
-                                        return  process_animation_in_generated(tmp_path)
+                                        return render_humanml3d(tmp_file)
                                     except Exception as e:
                                         print(f"애니메이션 변환 실패: {str(e)}")
                                         return f"""
@@ -423,7 +424,8 @@ def process_animation_in_generated(anim_path):
 
     # Also need to have a skin model for the viewer
     # Use default skin.glb from static directory if available
-    skin_path = Path(__file__).parent / "static" / "models" / "tpose.glb"
+    skin_path = Path(__file__).parent / "static" / "tpose.glb"
+
     if skin_path.exists():
         skin = MockFile(str(skin_path))
     else:
@@ -431,13 +433,12 @@ def process_animation_in_generated(anim_path):
         <div style="width: 100%; height: 500px; background-color: #333; border-radius: 8px; 
                     display: flex; justify-content: center; align-items: center; color: #ccc;">
             <div style="text-align: center;">
-                <h3>기본 포즈 skin 파일없음</h3>
+                <h3>기본 포즈 skin 파일없음 in file_utils</h3>
             </div>
         </div>
         """
-
-    file_ext = Path(anim.name).suffix.lower()
     
+    file_ext = Path(anim.name).suffix.lower()
     # NPY 또는 NPZ 파일 처리 (SMPL 애니메이션)
     if file_ext in ['.npy', '.npz']:
         try:
