@@ -75,8 +75,8 @@ def create_animation_tab(VIEWER_PATH, MODELS_DIR):
                     with gr.Column(scale=1, min_width=120):
                         prompt_btn = gr.Button("전송", variant="secondary")
                 
-                # 프롬프트 결과 출력 영역
-                prompt_result = gr.HTML(visible=True)
+                # # 프롬프트 결과 출력 영역
+                # prompt_result = gr.HTML(visible=True)
         
         # 버튼 클릭 이벤트 처리를 위한 함수 정의
         def process_animation(skin, anim):
@@ -114,5 +114,5 @@ def create_animation_tab(VIEWER_PATH, MODELS_DIR):
         prompt_btn.click(
             fn=send_prompt,
             inputs=prompt_input,
-            outputs=prompt_result
+            outputs=viewer
         )
