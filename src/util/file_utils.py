@@ -268,6 +268,22 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
                                     if pose_data.shape[2] == 24:
                                         print(f"수정 전 pose 데이터 형태: {pose_data.shape}")
                                         pose_data = pose_data[..., :22, :]  # Select only first 22 joints
+                                        # Convert pose data to format used by HumanML3D
+                                        # From axis-angle to 6D rotation representation format
+                                        import scipy.spatial.transform as R
+                                        pose_data = pose_data.reshape(pose_data.shape[0], pose_data.shape[1], -1, 3)  # Ensure it's in shape (batch, frames, joints, 3)
+                                        batch_size, n_frames, n_joints, _ = pose_data.shape
+                                        pose_data_6d = np.zeros((batch_size, n_frames, n_joints * 6), dtype=np.float32)
+
+                                        for b in range(batch_size):
+                                            for f in range(n_frames):
+                                                for j in range(n_joints):
+                                                    # Convert axis-angle to rotation matrix, then to 6D representation
+                                                    rotmat = R.Rotation.from_rotvec(pose_data[b, f, j]).as_matrix()  # (3, 3)
+                                                    rot_6d = rotmat[:, :2].flatten()  # Take first two columns and flatten to 6 values
+                                                    pose_data_6d[b, f, j*6:(j+1)*6] = rot_6d
+
+                                        pose_data = pose_data_6d  # Replace with 6D representation
                                         print(f"수정 후 pose 데이터 형태: {pose_data.shape}")
 
                                     # Update the SMPL format with modified pose data
