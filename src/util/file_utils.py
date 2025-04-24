@@ -296,13 +296,27 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
                                         "betas": [],
                                         "trans": trans_data.tolist()
                                     }
+                                    # 임시 파일로 numpy 데이터 저장
+                                    with tempfile.NamedTemporaryFile(suffix='.npy', delete=False) as tmp_file:
+                                        tmp_path = tmp_file.name
+                                        # 변환된 pose 데이터를 numpy 파일로 저장
+                                        np.save(tmp_path, pose_data[0])
+                                        print(f"애니메이션 데이터를 임시 파일에 저장: {tmp_path}")
 
-                                    # 여기서 랜더링 코드 호출
-                                    return f"""
-                                    <div id="prompt-result">
-                                        <p style="color: green;">모션 생성 실패!</p>
-                                        <pre>생성 성공!!.</pre>
-                                    </div>"""
+                                    # 임시 파일을 이용하여 애니메이션 처리
+                                    try:
+                                        print(f"애니메이션 변환 성공: {tmp_path}")
+                                        return  process_animation_in_generated(tmp_path)
+                                    except Exception as e:
+                                        print(f"애니메이션 변환 실패: {str(e)}")
+                                        return f"""
+                                        <div id="prompt-result">
+                                            <p style="color: red;">애니메이션 처리 오류</p>
+                                            <p style="color: #666; font-size: 0.9em;">{str(e)}</p>
+                                        </div>
+                                        """
+                                    finally:
+                                        os.remove(tmp_path)
                                 else:
                                     return f"""
                                     <div id="prompt-result">
