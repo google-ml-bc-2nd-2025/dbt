@@ -22,7 +22,7 @@ import base64
 from model.bone_mappings import SMPL_JOINT_NAMES, find_matching_bones, get_smpl_joint_index
 from model.smpl import mixamo_to_smpl_map as MIXAMO_TO_SMPL
 from util.viewer_template import create_viewer_html
-from converter.convert_mdm_to_glb import create_animation_only_glb, create_improved_glb_animation
+from converter.convert_mdm_to_glb import create_improved_glb_animation
 
 def axis_angle_to_rotation_6d(pose_aa):  # (T, 72) or (T, 24, 3)
     """
@@ -1228,7 +1228,7 @@ def apply_to_glb(skin_model, anim_data, viewer_path, models_dir, return_type='ht
         try:
             # 함수 호출 전 디버그 정보 출력
             print(f"Convert 함수 호출: motion_data={type(motion_data)}, skin_model={skin_model.name}")
-            output_files = create_improved_glb_animation(motion_data, models_dir)
+            output_files = create_improved_glb_animation(motion_data, result_path, base_glb_path=skin_model.name)
             
             if output_files and len(output_files) > 0:
                 print(f"생성된 애니메이션 파일들: {output_files}")
