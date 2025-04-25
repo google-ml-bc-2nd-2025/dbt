@@ -18,7 +18,17 @@ def render_humanml3d(anim_file):
     if file_ext == '.npy':
         npy = np.load(anim_file.name, allow_pickle=True)
         print(f"npy= {type(npy)}, shape={npy.shape if hasattr(npy, 'shape') else 'None'}")
-        
+        # 디버깅을 위해 npy 데이터의 처음 20개 요소 출력
+        try:
+            if hasattr(npy, 'shape'):
+                print("npy 첫 20개 요소:", npy.flatten()[:20] if npy.size > 0 else "빈 배열")
+            elif isinstance(npy, dict):
+                keys = list(npy.keys())[:20]
+                print(f"npy 딕셔너리 키 (최대 20개): {keys}")
+            else:
+                print("npy 내용:", str(npy)[:200], "...")
+        except Exception as e:
+            print(f"npy 출력 중 오류 발생: {e}")
         # dict 타입 체크
         if isinstance(npy, dict) and 'motion' in npy:
             data = npy['motion']

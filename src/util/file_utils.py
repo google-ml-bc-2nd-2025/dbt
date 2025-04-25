@@ -13,6 +13,10 @@ import requests
 import json
 import time
 import gradio as gr
+from model.smpl import joint_positions as smpl_default_positions
+import base64
+import numpy as np
+from scipy.spatial.transform import Rotation as R
 
 def apply_animation(skin_model, anim_model, viewer_path, models_dir):
     """
@@ -225,91 +229,60 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
 
                         if current_status == 'completed':
                             # 모션 데이터 조회
-                            motion_data = status_data.get('data', {}).get('motion', {})
-                            print(f"motion_data = {motion_data}")
-                            print(f"status_data = {status_data}")
+                            parent_4_data = status_data.get('data', {})
+                            print(f'parent_4_data is {type(parent_4_data)}, {parent_4_data.keys()}')
+                            motion_data = parent_4_data["motion"]
+                            print(f'motion_data is {type(motion_data)}')
+                            # Print the motion_data type and structure for debugging
+                            # Print motion_data shape and info for debugging
+                            if isinstance(motion_data, list):
+                                print(f"motion_data is a list of length {len(motion_data)}")
+                                if motion_data and isinstance(motion_data[0], list):
+                                    print(f"First element has length {len(motion_data[0])}")
+                            else:
+                                print(f"motion_data shape: {np.array(motion_data).shape}")
+
+                            # Reshape motion_data to (1, 22, 3, 120)
+                            # 
+                            motion_data_array = np.array(motion_data)
+                            if motion_data_array.ndim == 2:  # Likely (120, 66) or similar
+                                frames = motion_data_array.shape[0]
+                                motion_data_reshaped = motion_data_array.reshape(22, 3, frames)
+                            elif motion_data_array.ndim == 3:  # Might already be (1, 120, 66)
+                                motion_data_reshaped = motion_data_array.reshape(22, 3, motion_data_array.shape[1])
+                            else:
+                                motion_data_reshaped = motion_data_array.reshape(22, 3, 120)
 
                             try:
-                                # motion_data가 문자열인 경우 JSON으로 파싱
-                                if isinstance(motion_data, str):
-                                    motion_data = json.loads(motion_data)
-                                
-                                # base64로 인코딩된 데이터 디코딩
-                                if 'data' in motion_data:
-                                    import base64
-                                    import numpy as np
-                                    from scipy.spatial.transform import Rotation as R
-                                    
-                                    # base64 디코딩
-                                    decoded_data = base64.b64decode(motion_data['data'])
-                                    
-                                    # numpy 배열로 변환
-                                    motion_array = np.frombuffer(decoded_data, dtype=motion_data['dtype'])
-                                    
-                                    # shape에 맞게 reshape
-                                    motion_array = motion_array.reshape(motion_data['shape'])
-                                    
-                                    # 메타데이터에서 pose와 trans의 shape 가져오기
-                                    pose_shape = status_data.get('data', {}).get('animation_result', {}).get('metadata', {}).get('pose_shape', (1, 120, 24, 3))
-                                    trans_shape = status_data.get('data', {}).get('animation_result', {}).get('metadata', {}).get('trans_shape', (1, 120, 3))
-                                    
-                                    # pose와 trans 데이터 분리
-                                    pose_size = np.prod(pose_shape)
-                                    trans_size = np.prod(trans_shape)
-                                    
-                                    pose_data = motion_array[:pose_size].reshape(pose_shape)
-                                    trans_data = motion_array[-trans_size:].reshape(trans_shape)
-                                    
-                                    smpl_format = {
-                                        "pose": pose_data.tolist(),
-                                        "betas": [],
-                                        "trans": trans_data.tolist()
-                                    }
-                                    if pose_data.shape[2] == 24:
-                                        print(f"수정 전 pose 데이터 형태: {pose_data.shape}")
-                                        pose_data = pose_data[..., :22, :] 
-                                        pose_data = pose_data[0]
-                                        # Convert SMPL format to HumanML3D format
-                                        # In SMPL, rotations are in axis-angle format
-                                        # We need to convert to match HumanML3D joint orientation
+                                # 딕셔너리로 래핑하여 #terminalSelection과 같은 형식으로 만들기
+                                motion_dict = {
+                                    'motion': motion_data_reshaped,
+                                    'text': ['good job'],
+                                    'lengths': np.array([120]),
+                                    'num_samples': 1,
+                                    'num_repetitions': 1
+                                }
+                                pose_data = motion_dict
+                                print(f"#terminalSelection 형식으로 변환 완료: {type(pose_data)}")
 
-                                        # Convert axis-angle to rotation matrices
-                                        rot_matrices = R.from_rotvec(pose_data.reshape(-1, 3)).as_matrix()
-                                        rot_matrices = rot_matrices.reshape(pose_data.shape[0], pose_data.shape[1], 3, 3)
+                                with tempfile.NamedTemporaryFile(suffix='.npy', delete=False) as tmp_file:
+                                    tmp_path = tmp_file.name
+                                    # 변환된 pose 데이터를 numpy 파일로 저장
+                                    np.save(tmp_path, pose_data)
+                                    print(f"애니메이션 데이터를 임시 파일에 저장: {tmp_path}")
 
-                                        # Apply rotation offsets to match HumanML3D convention
-                                        # X rotation offset of -π/2 on specific joints (could be adjusted based on testing)
-                                        for joint_idx in [7, 8, 10, 11]:  # ankles and feet
-                                            offset_rot = R.from_euler('x', -np.pi/2).as_matrix()
-                                            rot_matrices[:, joint_idx] = rot_matrices[:, joint_idx] @ offset_rot
-
-                                        # Convert back to axis-angle representation
-                                        pose_data = R.from_matrix(rot_matrices.reshape(-1, 3, 3)).as_rotvec()
-                                        pose_data = pose_data.reshape(-1, 22, 3)
-
-                                        print(f"수정 후 pose 데이터 형태: {pose_data.shape}")
-
-                                    # Update the SMPL format with modified pose data
-                                    smpl_format["pose"] = pose_data.tolist()
-                                    # 임시 파일로 numpy 데이터 저장
-                                    with tempfile.NamedTemporaryFile(suffix='.npy', delete=False) as tmp_file:
-                                        tmp_path = tmp_file.name
-                                        # 변환된 pose 데이터를 numpy 파일로 저장
-                                        np.save(tmp_path, pose_data)
-                                        print(f"애니메이션 데이터를 임시 파일에 저장: {tmp_path}")
-
-                                    # 임시 파일을 이용하여 애니메이션 처리
-                                    try:
-                                        print(f"애니메이션 변환 성공: {tmp_path}")
-                                        return render_humanml3d(tmp_file)
-                                    except Exception as e:
-                                        print(f"애니메이션 변환 실패: {str(e)}")
-                                        return f"""
-                                        <div id="prompt-result">
-                                            <p style="color: red;">애니메이션 처리 오류</p>
-                                            <p style="color: #666; font-size: 0.9em;">{str(e)}</p>
-                                        </div>
-                                        """
+                                # 임시 파일을 이용하여 애니메이션 처리
+                                try:
+                                    print(f"애니메이션 변환 성공: {tmp_path}")
+                                    return render_humanml3d(tmp_file)
+                                except Exception as e:
+                                    print(f"애니메이션 변환 실패: {str(e)}")
+                                    return f"""
+                                    <div id="prompt-result">
+                                        <p style="color: red;">애니메이션 처리 오류</p>
+                                        <p style="color: #666; font-size: 0.9em;">{str(e)}</p>
+                                    </div>
+                                    """
                                 else:
                                     return f"""
                                     <div id="prompt-result">
@@ -319,6 +292,7 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
                                     """
                                 
                             except Exception as e:
+                                print(f"데이터 변환 오류: {str(e)}")
                                 return f"""
                                 <div id="prompt-result">
                                     <p style="color: red;">데이터 변환 오류</p>
