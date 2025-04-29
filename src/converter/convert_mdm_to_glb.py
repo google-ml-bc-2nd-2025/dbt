@@ -114,7 +114,7 @@ def global_to_local_positions(global_positions, hierarchy, correct_axes=True):
     return local_positions
 
 
-def create_improved_glb_animation(motion_data, output_path=None, fps=30, target_bones=None):
+def create_improved_glb_animation(motion_data, output_path=None, fps=30, target_bones=None, file_ext='glb'):
     """
     모션 데이터(절대 위치 좌표)를 기반으로 GLB 애니메이션 생성
     추가로 모든 자식 본들에 대해서도 보간 애니메이션 생성
@@ -183,7 +183,7 @@ def create_improved_glb_animation(motion_data, output_path=None, fps=30, target_
     
     try:
         # 7. 베이스 GLB 템플릿 로드 - 기존 골격 구조 유지를 위해
-        base_glb_path = Path(__file__).parent / '../static/models/_baseimproved_animation.glb'
+        base_glb_path = Path(__file__).parent / '../static/models/base_skin.glb'
         print(f"기본 GLB 템플릿 로드 중: {base_glb_path}")
         if os.path.exists(base_glb_path):
             base_gltf = pygltflib.GLTF2().load(str(base_glb_path))

@@ -46,7 +46,7 @@ def save_model(file_obj, prefix, models_dir):
     # 파일명만 반환 (전체 경로 대신)
     return f"/file={model_path}"
 
-def apply_animation(skin_model, anim_model, viewer_path, models_dir):
+def apply_animation(skin_model, anim_model, viewer_path, models_dir, file_ext="glb"):
     """
     스킨 모델과 애니메이션 모델을 뷰어에 적용합니다.
     웹 기반 3D 뷰어에서 스킨 모델(GLB 등)과 애니메이션 모델(GLB, NPY, NPZ, BVH 등)을 
@@ -61,6 +61,7 @@ def apply_animation(skin_model, anim_model, viewer_path, models_dir):
     Returns:
         HTML 문자열 (iframe으로 뷰어 표시)
     """
+    
     if skin_model is None:
         return "스킨 모델을 먼저 업로드해주세요."
 

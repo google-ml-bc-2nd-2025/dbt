@@ -47,7 +47,6 @@
         }
     }
     </script>
-    
     <script type="module">
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -367,6 +366,44 @@
                     reject(error);
                 }
             });
+        }
+
+        function loadSMPLAnimation(animModelUrl)
+        {   
+            return new Promise(async (resolve, reject) => {
+                try{
+                    if (!animModelUrl) {
+                        console.log('SMPL 애니메이션 URL이 없어 스킨만 표시합니다.');
+                        resolve(null);
+                        return;
+                    }
+                    updateLoadingStatus('SMPL은 아직 지원하지 않습니다.');
+                    setTimeout(() => {
+                        document.getElementById('loading').style.display = 'none';
+                    }, 1000);
+                    resolve();
+                } catch (error) {
+                    console.error('SMPL 애니메이션 로딩 중 예외 발생:', error);
+                    updateLoadingStatus('SMPL 애니메이션 로딩 중 예외 발생: ' + error.message, true);
+                    reject(error);
+                }
+            })
+        }
+        function loadHumanML3DAnimation()
+        {
+            return new Promise((resolve, reject) => {
+                try{
+                    if (!animModelUrl) {
+                        console.log('HumanML3D 애니메이션 URL이 없어 스킨만 표시합니다.');
+                        resolve(null);
+                        return;
+                    }
+                } catch (error) {
+                    console.error('HumanML3D 애니메이션 로딩 중 예외 발생:', error);
+                    updateLoadingStatus('HumanML3D 애니메이션 로딩 중 예외 발생: ' + error.message, true);
+                    reject(error);
+                }
+            })
         }
 
         // BVH 애니메이션 로드 및 적용 함수 - GLB 연결 코드 제거
@@ -879,7 +916,11 @@
                         if (animType.toLowerCase() === 'bvh') {
                             // BVH 애니메이션은 별도 처리 
                             await loadBVHAnimation();
-                        } else {
+                        } else if (animType.toLowerCase() === 'smpl'){
+                            await loadSMPLAnimation(animModelUrl);
+                        } else if (animType.toLowerCase() === 'humanml3d'){
+                            await loadHumanML3DAnimation();
+                        }else {
                             // GLB 애니메이션만 스킨에 적용
                             await loadGLBAnimation();
                         }

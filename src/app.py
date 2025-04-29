@@ -10,7 +10,8 @@ from pathlib import Path
 # 프로젝트 내 사용자 정의 모듈 임포트
 from util.viewer_template import create_viewer_html
 # 탭 모듈 임포트
-from page.animation_tab import create_animation_tab
+from page.animation_generation_tab import create_animation_generation_tab
+from page.animation_viewer_tab import create_animation_viewer_tab
 from page.dataset_edit_tab import create_dataset_edit_tab
 from page.dataset_create_tab import create_dataset_create_tab  # 새로운 탭 모듈 임포트
 
@@ -40,19 +41,22 @@ def cleanup():
 atexit.register(cleanup)
 
 # Gradio 인터페이스 생성
-with gr.Blocks(title="AssetSmith") as demo:
-    gr.Markdown("# AssetSmith")
+with gr.Blocks(title="Animation Tool") as demo:
+    gr.Markdown("# Animation Tool")
     
     # 탭 인터페이스 생성
     with gr.Tabs():
+        with gr.TabItem("애니메이션 뷰어"):
+            create_animation_viewer_tab(VIEWER_PATH, MODELS_DIR)
+
         with gr.TabItem("애니메이션 생성"):
-            create_animation_tab(VIEWER_PATH, MODELS_DIR)
+            create_animation_generation_tab(VIEWER_PATH, MODELS_DIR)
             
         with gr.TabItem("애니메이션 학습 데이터셋 생성"):
             create_dataset_create_tab(MODELS_DIR)
         
-        with gr.TabItem("학습 데이터 수정"):  # 새로운 탭 추가
-            create_dataset_edit_tab(VIEWER_PATH, MODELS_DIR)
+        # with gr.TabItem("학습 데이터 수정"):
+        #     create_dataset_edit_tab(VIEWER_PATH, MODELS_DIR)
 
 # 웹 서버 실행
 if __name__ == "__main__":

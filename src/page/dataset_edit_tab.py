@@ -100,36 +100,21 @@ def create_dataset_edit_tab(VIEWER_PATH,MODELS_DIR):
                         4. 추출된 애니메이션 데이터는 오른쪽에 결과가 표시됩니다.
                         """)
                     
-                    with gr.Column(scale=2):
-                        with gr.Row():
-                            # 원본 영상 미리보기
-                            original_video = gr.Video(
-                                label="원본 영상",
-                                interactive=False
-                            )
-                            
-                            # 포즈 추출 미리보기 (3D 모델 또는 스켈레톤 오버레이)
-                            # pose_preview = gr.HTML(
-                            #     label="추출된 포즈",
-                            #     value="""
-                            #     <div style="width: 100%; height: 300px; background-color: #333; border-radius: 8px; 
-                            #             display: flex; justify-content: center; align-items: center; color: #ccc;">
-                            #         <div style="text-align: center;">
-                            #             <h3>포즈 추출 미리보기</h3>
-                            #             <p>영상에서 포즈를 추출하면 여기에 표시됩니다</p>
-                            #         </div>
-                            #     </div>
-                            #     """
-                            # )
-                        
-                        # # 포즈 미리보기 버튼을 여기로 이동 (포즈 미리보기 창 아래에 위치)
-                        # preview_btn = gr.Button(
-                        #     "포즈 미리보기", 
-                        #     variant="secondary",
-                        #     visible=True
-                        # )
-                        
-                        # 처리 상태 및 통계
+            with gr.TabItem("온라인 영상 추출"):
+                with gr.Row():
+                    with gr.Column(scale=1):  # 입력 폼
+                        # ...입력 폼 코드...
+                        extract_btn = gr.Button("포즈 데이터 추출", variant="primary")
+                        gr.Markdown("""...설명...""")
+                    with gr.Column(scale=1):  # 영상 미리보기만 별도 컬럼에 분리
+                        original_video = gr.Video(
+                            label="원본 영상",
+                            interactive=False,
+                            elem_id="original_video",
+                            autoplay=False,
+                            show_label=True,
+                        )
+                    with gr.Column(scale=1):  # 상태/다운로드
                         extraction_status = gr.JSON(
                             label="처리 상태",
                             value={
@@ -139,15 +124,12 @@ def create_dataset_edit_tab(VIEWER_PATH,MODELS_DIR):
                                 "예상 완료 시간": "-"
                             }
                         )
-                        
-                        # 다운로드 옵션
                         with gr.Row():
                             export_format = gr.Dropdown(
                                 label="내보내기 포맷",
                                 choices=["GLB", "BVH", "FBX"],
                                 value="GLB"
                             )
-                            
                             download_btn = gr.Button("다운로드", variant="secondary")
                 
             with gr.TabItem("기존 파일 편집"):
