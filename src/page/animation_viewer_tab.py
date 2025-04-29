@@ -8,6 +8,12 @@ import uuid  # uuid 모듈 추가
 from pathlib import Path
 from util.file_utils import apply_animation, send_prompt
 from render.smpl_animation import apply_to_glb
+from render.humanml3d_renderer import render_humanml3d
+import numpy as np
+import base64
+import json
+from io import BytesIO
+from pathlib import Path
 
 def create_animation_viewer_tab(VIEWER_PATH, MODELS_DIR):
     """애니메이션 뷰어 탭 인터페이스 생성"""

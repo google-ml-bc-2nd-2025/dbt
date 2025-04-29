@@ -1228,7 +1228,7 @@ def apply_to_glb(skin_model, anim_data, viewer_path, models_dir, return_type='ht
         try:
             # 함수 호출 전 디버그 정보 출력
             print(f"Convert 함수 호출: motion_data={type(motion_data)}, skin_model={skin_model.name}")
-            output_files = create_improved_glb_animation(motion_data, result_path)
+            output_files = create_improved_glb_animation(motion_data, result_path, base_glb_path=skin_model.name)
             
             if output_files and len(output_files) > 0:
                 print(f"생성된 애니메이션 파일들: {output_files}")

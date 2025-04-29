@@ -3,48 +3,20 @@
 """
 
 import os
-import shutil
-import uuid
 import numpy as np
 from pathlib import Path
 import tempfile
 from render.smpl_animation import apply_to_glb
+from render.humanml3d_renderer import render_humanml3d
+from util.model_utils import save_model
 import requests
 import json
 import time
 import gradio as gr
-
-def save_model(file_obj, prefix, models_dir):
-    """
-    모델 파일을 저장하고 URL을 반환합니다.
-    
-    Args:
-        file_obj: 업로드된 파일 객체
-        prefix: 파일 접두어 (예: "skin", "anim")
-        models_dir: 모델이 저장될 디렉토리 경로
-    
-    Returns:
-        저장된 파일의 URL 경로
-    """
-    if file_obj is None:
-        return None
-    
-    # 고유 ID 생성 및 파일 저장
-    unique_id = str(uuid.uuid4())[:8]
-    
-    # 원본 파일 확장자 유지
-    original_ext = Path(file_obj.name).suffix.lower()
-    filename = f"{prefix}_{unique_id}{original_ext}"
-    model_path = models_dir / filename
-    
-    # 파일 복사
-    file_path = file_obj.name if hasattr(file_obj, "name") else file_obj
-    print(f"파일 저장 경로: {model_path}")
-    print(f"파일 복사: {file_path} -> {model_path}")
-    shutil.copy2(file_path, model_path)
-    
-    # 파일명만 반환 (전체 경로 대신)
-    return f"/file={model_path}"
+from model.smpl import joint_positions as smpl_default_positions
+import base64
+import numpy as np
+from scipy.spatial.transform import Rotation as R
 
 def apply_animation(skin_model, anim_model, viewer_path, models_dir, file_ext="glb"):
     """
@@ -250,67 +222,78 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
                         if current_status != last_state:
                             print(f"작업 상태 변경: {last_state} -> {current_status}")
                             last_state = current_status
-                        
+
                         # None 상태나 processing 상태일 때는 계속 대기
                         if current_status is None or current_status == 'processing':
                             time.sleep(3)  # 3초 대기
                             continue
-                        
+
                         if current_status == 'completed':
                             # 모션 데이터 조회
-                            motion_data = status_data.get('data', {}).get('motion', {})
-                            print(f"motion_data = {motion_data}")
-                            print(f"status_data = {status_data}")
-                            
+                            parent_4_data = status_data.get('data', {})
+                            print(f'parent_4_data is {type(parent_4_data)}, {parent_4_data.keys()}')
+                            motion_data = parent_4_data["motion"]
+                            print(f'motion_data is {type(motion_data)}')
+                            # Print the motion_data type and structure for debugging
+                            # Print motion_data shape and info for debugging
+                            if isinstance(motion_data, list):
+                                print(f"motion_data is a list of length {len(motion_data)}")
+                                if motion_data and isinstance(motion_data[0], list):
+                                    print(f"First element has length {len(motion_data[0])}")
+                            else:
+                                print(f"motion_data shape: {np.array(motion_data).shape}")
+
+                            # Reshape motion_data to (1, 22, 3, 120)
+                            # 
+                            motion_data_array = np.array(motion_data)
+                            if motion_data_array.ndim == 2:  # Likely (120, 66) or similar
+                                frames = motion_data_array.shape[0]
+                                motion_data_reshaped = motion_data_array.reshape(22, 3, frames)
+                            elif motion_data_array.ndim == 3:  # Might already be (1, 120, 66)
+                                motion_data_reshaped = motion_data_array.reshape(22, 3, motion_data_array.shape[1])
+                            else:
+                                motion_data_reshaped = motion_data_array.reshape(22, 3, 120)
+
                             try:
-                                # motion_data가 문자열인 경우 JSON으로 파싱
-                                if isinstance(motion_data, str):
-                                    motion_data = json.loads(motion_data)
-                                
-                                # base64로 인코딩된 데이터 디코딩
-                                if 'data' in motion_data:
-                                    import base64
-                                    import numpy as np
-                                    
-                                    # base64 디코딩
-                                    decoded_data = base64.b64decode(motion_data['data'])
-                                    
-                                    # numpy 배열로 변환
-                                    motion_array = np.frombuffer(decoded_data, dtype=motion_data['dtype'])
-                                    
-                                    # shape에 맞게 reshape
-                                    motion_array = motion_array.reshape(motion_data['shape'])
-                                    
-                                    # 메타데이터에서 pose와 trans의 shape 가져오기
-                                    pose_shape = status_data.get('data', {}).get('animation_result', {}).get('metadata', {}).get('pose_shape', (1, 120, 24, 3))
-                                    trans_shape = status_data.get('data', {}).get('animation_result', {}).get('metadata', {}).get('trans_shape', (1, 120, 3))
-                                    
-                                    # pose와 trans 데이터 분리
-                                    pose_size = np.prod(pose_shape)
-                                    trans_size = np.prod(trans_shape)
-                                    
-                                    pose_data = motion_array[:pose_size].reshape(pose_shape)
-                                    trans_data = motion_array[-trans_size:].reshape(trans_shape)
-                                    
-                                    smpl_format = {
-                                        "pose": pose_data.tolist(),
-                                        "betas": [],
-                                        "trans": trans_data.tolist()
-                                    }
+                                # 딕셔너리로 래핑하여 #terminalSelection과 같은 형식으로 만들기
+                                motion_dict = {
+                                    'motion': motion_data_reshaped,
+                                    'text': ['good job'],
+                                    'lengths': np.array([120]),
+                                    'num_samples': 1,
+                                    'num_repetitions': 1
+                                }
+                                pose_data = motion_dict
+                                print(f"#terminalSelection 형식으로 변환 완료: {type(pose_data)}")
+
+                                with tempfile.NamedTemporaryFile(suffix='.npy', delete=False) as tmp_file:
+                                    tmp_path = tmp_file.name
+                                    # 변환된 pose 데이터를 numpy 파일로 저장
+                                    np.save(tmp_path, pose_data)
+                                    print(f"애니메이션 데이터를 임시 파일에 저장: {tmp_path}")
+
+                                # 임시 파일을 이용하여 애니메이션 처리
+                                try:
+                                    print(f"애니메이션 변환 성공: {tmp_path}")
+                                    return render_humanml3d(tmp_file)
+                                except Exception as e:
+                                    print(f"애니메이션 변환 실패: {str(e)}")
+                                    return f"""
+                                    <div id="prompt-result">
+                                        <p style="color: red;">애니메이션 처리 오류</p>
+                                        <p style="color: #666; font-size: 0.9em;">{str(e)}</p>
+                                    </div>
+                                    """
                                 else:
-                                    smpl_format = {
-                                        "pose": [],
-                                        "betas": [],
-                                        "trans": []
-                                    }
+                                    return f"""
+                                    <div id="prompt-result">
+                                        <p style="color: green;">모션 생성 실패!</p>
+                                        <pre>생성에 실패했습니다.</pre>
+                                    </div>
+                                    """
                                 
-                                return f"""
-                                <div id="prompt-result">
-                                    <p style="color: green;">모션 생성 완료!</p>
-                                    <pre>{json.dumps(smpl_format, indent=2, ensure_ascii=False)}</pre>
-                                </div>
-                                """
                             except Exception as e:
+                                print(f"데이터 변환 오류: {str(e)}")
                                 return f"""
                                 <div id="prompt-result">
                                     <p style="color: red;">데이터 변환 오류</p>
@@ -400,7 +383,8 @@ def process_animation_in_generated(anim_path):
 
     # Also need to have a skin model for the viewer
     # Use default skin.glb from static directory if available
-    skin_path = Path(__file__).parent / "static" / "models" / "tpose.glb"
+    skin_path = Path(__file__).parent / "static" / "tpose.glb"
+
     if skin_path.exists():
         skin = MockFile(str(skin_path))
     else:
@@ -408,14 +392,12 @@ def process_animation_in_generated(anim_path):
         <div style="width: 100%; height: 500px; background-color: #333; border-radius: 8px; 
                     display: flex; justify-content: center; align-items: center; color: #ccc;">
             <div style="text-align: center;">
-                <h3>기본 포즈 skin 파일없음</h3>
-                <p>{str(e)}</p>
+                <h3>기본 포즈 skin 파일없음 in file_utils</h3>
             </div>
         </div>
         """
-
-    file_ext = Path(anim.name).suffix.lower()
     
+    file_ext = Path(anim.name).suffix.lower()
     # NPY 또는 NPZ 파일 처리 (SMPL 애니메이션)
     if file_ext in ['.npy', '.npz']:
         try:

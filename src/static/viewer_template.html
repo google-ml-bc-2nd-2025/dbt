@@ -59,6 +59,12 @@
         let jointMeshes = []; // 본 메시 배열
         let jointLabels = []; // 본 라벨 배열
         let boneLabelsVisible = false; // 본 라벨 가시성 상태
+        // humanml3d 관련 변수
+        let humanml3dMixer;
+        let humanml3dClock = new THREE.Clock();
+        let humanml3dSkeleton;
+        let humanml3dJoints;
+        let humanml3dLines;
 
         // URL 파라미터 가져오기
         const urlParams = new URLSearchParams(window.location.search);
@@ -890,6 +896,284 @@
             });
         }
 
+        // HumanML3D 애니메이션 로드 함수 추가
+        function loadHumanML3DAnimation() {
+            return new Promise((resolve, reject) => {
+                if (!animModelUrl) {
+                    console.log('HumanML3D 애니메이션 URL이 없습니다.');
+                    resolve(null);
+                    return;
+                }
+                
+                updateLoadingStatus('HumanML3D 애니메이션 로딩 중...');
+                
+                try {
+                    const url = animModelUrl;
+                    console.log('로딩할 HumanML3D 애니메이션 URL:', url);
+                    
+                    // 파일 확장자 확인
+                    if (!url.endsWith('.npy')) {
+                        updateLoadingStatus('지원되지 않는 파일 형식입니다. (NPY 파일만 지원)', true);
+                        reject(new Error('지원되지 않는 파일 형식'));
+                        return;
+                    }
+                    
+                    // NPY 파일 직접 로드
+                    fetch(url)
+                        .then(response => response.arrayBuffer())
+                        .then(buffer => {
+                            // NPY 파일 헤더 처리 (간단한 버전)
+                            const headerLength = new DataView(buffer, 8, 2).getUint8(0) + 10;
+                            const dataBuffer = buffer.slice(headerLength);
+                            
+                            // Float32Array로 변환
+                            const floatArray = new Float32Array(dataBuffer);
+                            
+                            // HumanML3D 데이터 형식 처리 (F, J, 3) 형태로 변환
+                            console.log('로드된 데이터 길이:', floatArray.length);
+                            
+                            // 기존 모델 숨기기
+                            if (skinModel) {
+                                skinModel.visible = false;
+                            }
+                            
+                            // 본 연결 정보 (SMPL 22본 기준)
+                            const skeletonConnections = [
+                                [0,1],[1,4],[4,7],[7,10],
+                                [0,2],[2,5],[5,8],[8,11],
+                                [0,3],[3,6],[6,9],[9,12],[12,13],[13,16],[16,18],[18,20],
+                                [12,14],[14,17],[17,19],[19,21],
+                                [12,15]
+                            ];
+                            
+                            // 프레임 수 추정 (데이터의 길이 / (22개 관절 x 3 좌표))
+                            const numFrames = Math.floor(floatArray.length / (22 * 3));
+                            console.log('추정 프레임 수:', numFrames);
+                            
+                            if (numFrames <= 0) {
+                                updateLoadingStatus('데이터 형식이 올바르지 않습니다.', true);
+                                reject(new Error('데이터 형식 오류'));
+                                return;
+                            }
+                            
+                            // 3D 점 및 라인 생성
+                            const pointsGeometry = new THREE.BufferGeometry();
+                            const pointsPositions = new Float32Array(22 * 3);
+                            pointsGeometry.setAttribute('position', new THREE.BufferAttribute(pointsPositions, 3));
+                            
+                            const pointsMaterial = new THREE.PointsMaterial({
+                                color: 0xffcc00,
+                                size: 0.05,
+                                sizeAttenuation: true
+                            });
+                            
+                            humanml3dJoints = new THREE.Points(pointsGeometry, pointsMaterial);
+                            scene.add(humanml3dJoints);
+                            
+                            const linesGeometry = new THREE.BufferGeometry();
+                            const linesPositions = new Float32Array(skeletonConnections.length * 2 * 3);
+                            linesGeometry.setAttribute('position', new THREE.BufferAttribute(linesPositions, 3));
+                            
+                            const linesMaterial = new THREE.LineBasicMaterial({
+                                color: 0x00ffcc,
+                                linewidth: 2
+                            });
+                            
+                            humanml3dLines = new THREE.LineSegments(linesGeometry, linesMaterial);
+                            scene.add(humanml3dLines);
+                            
+                            // 첫 프레임으로 스켈레톤 위치 초기화
+                            updateHumanML3DFrame(0, floatArray, skeletonConnections);
+                            
+                            // 중심 계산
+                            let centerX = 0, centerY = 0, centerZ = 0;
+                            for (let i = 0; i < 22; i++) {
+                                centerX += pointsPositions[i*3];
+                                centerY += pointsPositions[i*3+1];
+                                centerZ += pointsPositions[i*3+2];
+                            }
+                            centerX /= 22;
+                            centerY /= 22;
+                            centerZ /= 22;
+                            
+                            // 카메라 위치 조정
+                            camera.position.set(centerX, centerY + 1, centerZ + 3);
+                            controls.target.set(centerX, centerY, centerZ);
+                            controls.update();
+                            
+                            // 애니메이션 클립 생성
+                            const tracks = [];
+                            const times = new Float32Array(numFrames);
+                            for (let i = 0; i < numFrames; i++) {
+                                times[i] = i / 30; // 30fps 가정
+                            }
+                            
+                            const positionTrack = new THREE.NumberKeyframeTrack(
+                                '.position',
+                                times,
+                                new Float32Array(numFrames * 3)
+                            );
+                            
+                            tracks.push(positionTrack);
+                            const clip = new THREE.AnimationClip('animation', -1, tracks);
+                            
+                            // 애니메이션 믹서 생성
+                            humanml3dMixer = {
+                                currentFrame: 0,
+                                totalFrames: numFrames,
+                                floatArray: floatArray,
+                                skeletonConnections: skeletonConnections,
+                                isPlaying: true,
+                                speed: 1.0,
+                                frameTime: 0,
+                                update: function(delta) {
+                                    if (!this.isPlaying) return;
+                                    
+                                    this.frameTime += delta;
+                                    const frameDuration = 1.0 / (30 * this.speed);
+                                    
+                                    if (this.frameTime >= frameDuration) {
+                                        this.frameTime = 0;
+                                        this.currentFrame = (this.currentFrame + 1) % this.totalFrames;
+                                        updateHumanML3DFrame(this.currentFrame, this.floatArray, this.skeletonConnections);
+                                    }
+                                }
+                            };
+                            
+                            // 애니메이션 UI 추가
+                            const infoElement = document.querySelector('.info');
+                            if (infoElement) {
+                                infoElement.innerHTML = 'HumanML3D 애니메이션 뷰어';
+                                
+                                infoElement.innerHTML += `
+                                <div style="margin-top: 10px;">
+                                    <div style="display: flex; align-items: center; margin-bottom: 5px;">
+                                        <button id="toggle-play" style="margin-right: 5px; width: 80px;">일시정지</button>
+                                        <span id="frame-display">0/${numFrames}</span>
+                                    </div>
+                                    <div style="margin-top: 5px;">
+                                        <input type="range" id="anim-timeline" min="0" max="${numFrames-1}" step="1" value="0" style="width: 100%;">
+                                    </div>
+                                    <div style="margin-top: 5px;">
+                                        <label for="anim-speed">속도: <span id="speed-value">1.0</span>x</label>
+                                        <input type="range" id="anim-speed" min="0.1" max="2" step="0.1" value="1.0" style="width: 100%;">
+                                    </div>
+                                    <div style="margin-top: 5px;">
+                                        <button id="reset-view">시점 리셋</button>
+                                    </div>
+                                </div>
+                                `;
+                                
+                                setTimeout(() => {
+                                    const playButton = document.getElementById('toggle-play');
+                                    const timelineSlider = document.getElementById('anim-timeline');
+                                    const frameDisplay = document.getElementById('frame-display');
+                                    const speedSlider = document.getElementById('anim-speed');
+                                    const speedValue = document.getElementById('speed-value');
+                                    const resetButton = document.getElementById('reset-view');
+                                    
+                                    if (playButton) {
+                                        playButton.addEventListener('click', () => {
+                                            humanml3dMixer.isPlaying = !humanml3dMixer.isPlaying;
+                                            playButton.textContent = humanml3dMixer.isPlaying ? '일시정지' : '재생';
+                                        });
+                                    }
+                                    
+                                    if (timelineSlider && frameDisplay) {
+                                        timelineSlider.addEventListener('input', (e) => {
+                                            const frame = parseInt(e.target.value);
+                                            humanml3dMixer.currentFrame = frame;
+                                            frameDisplay.textContent = `${frame}/${numFrames}`;
+                                            updateHumanML3DFrame(frame, floatArray, skeletonConnections);
+                                        });
+                                    }
+                                    
+                                    if (speedSlider && speedValue) {
+                                        speedSlider.addEventListener('input', (e) => {
+                                            const speed = parseFloat(e.target.value);
+                                            humanml3dMixer.speed = speed;
+                                            speedValue.textContent = speed.toFixed(1);
+                                        });
+                                    }
+                                    
+                                    if (resetButton) {
+                                        resetButton.addEventListener('click', () => {
+                                            camera.position.set(centerX, centerY + 1, centerZ + 3);
+                                            controls.target.set(centerX, centerY, centerZ);
+                                            controls.update();
+                                        });
+                                    }
+                                    
+                                    // 프레임 업데이트 함수
+                                    const updateFrame = () => {
+                                        if (humanml3dMixer && humanml3dMixer.isPlaying) {
+                                            frameDisplay.textContent = `${humanml3dMixer.currentFrame}/${numFrames}`;
+                                            timelineSlider.value = humanml3dMixer.currentFrame;
+                                        }
+                                        requestAnimationFrame(updateFrame);
+                                    };
+                                    updateFrame();
+                                }, 100);
+                            }
+                            
+                            // 로딩 메시지 숨기기
+                            setTimeout(() => {
+                                document.getElementById('loading').style.display = 'none';
+                            }, 1000);
+                            
+                            updateLoadingStatus('HumanML3D 애니메이션 로드 완료');
+                            resolve({
+                                numFrames: numFrames,
+                                data: floatArray
+                            });
+                        })
+                        .catch(error => {
+                            console.error('NPY 파일 로딩 오류:', error);
+                            updateLoadingStatus('NPY 파일 로딩 오류: ' + error.message, true);
+                            reject(error);
+                        });
+                } catch (error) {
+                    console.error('HumanML3D 애니메이션 로딩 중 예외 발생:', error);
+                    updateLoadingStatus('HumanML3D 애니메이션 로딩 중 예외 발생: ' + error.message, true);
+                    reject(error);
+                }
+            });
+        }
+        
+        // HumanML3D 프레임 업데이트 함수
+        function updateHumanML3DFrame(frameIndex, floatArray, skeletonConnections) {
+            if (!humanml3dJoints || !humanml3dLines) return;
+            
+            const jointsCount = 22;
+            const jointPositions = humanml3dJoints.geometry.attributes.position.array;
+            const linePositions = humanml3dLines.geometry.attributes.position.array;
+            
+            // 관절 위치 업데이트
+            for (let i = 0; i < jointsCount; i++) {
+                const dataIndex = frameIndex * jointsCount * 3 + i * 3;
+                
+                jointPositions[i*3] = floatArray[dataIndex];
+                jointPositions[i*3+1] = floatArray[dataIndex+1];
+                jointPositions[i*3+2] = floatArray[dataIndex+2];
+            }
+            
+            // 라인 위치 업데이트
+            for (let i = 0; i < skeletonConnections.length; i++) {
+                const [jointA, jointB] = skeletonConnections[i];
+                
+                linePositions[i*6] = jointPositions[jointA*3];
+                linePositions[i*6+1] = jointPositions[jointA*3+1];
+                linePositions[i*6+2] = jointPositions[jointA*3+2];
+                
+                linePositions[i*6+3] = jointPositions[jointB*3];
+                linePositions[i*6+4] = jointPositions[jointB*3+1];
+                linePositions[i*6+5] = jointPositions[jointB*3+2];
+            }
+            
+            humanml3dJoints.geometry.attributes.position.needsUpdate = true;
+            humanml3dLines.geometry.attributes.position.needsUpdate = true;
+        }
+
         // 모델이 로드되면, 부모 창에 메시지 전송
         function notifyParent(status) {
             try {
@@ -905,7 +1189,28 @@
         // 모델 로드 및 애니메이션 적용
         async function loadModels() {
             try {
-                // 먼저 스킨 모델 로드
+                // 애니메이션 타입이 humanml3d이면 스킨 모델 없이도 작동하도록 변경
+                if (animType.toLowerCase() === 'humanml3d') {
+                    try {
+                        console.log('HumanML3D 모드로 로드 시작 (스킨 모델 없음)');
+                        await loadHumanML3DAnimation();
+                        
+                        // 로딩 메시지 숨김
+                        setTimeout(() => {
+                            document.getElementById('loading').style.display = 'none';
+                        }, 1000);
+                        
+                        // 성공 알림
+                        notifyParent('success');
+                    } catch (error) {
+                        console.error('HumanML3D 애니메이션 로드 오류:', error);
+                        updateLoadingStatus('HumanML3D 애니메이션 로드 오류: ' + error.message, true);
+                        notifyParent('error');
+                    }
+                    return; // 여기서 함수 종료
+                }
+
+                // 스킨 모델 로드 (기존 코드)
                 await loadSkinModel();
                 
                 // 스킨 모델 로드 성공 후 애니메이션 로드 및 적용
@@ -952,7 +1257,7 @@
         }
 
         // 모델 로드 시작
-        if (skinModelUrl) {
+        if (skinModelUrl || animType.toLowerCase() === 'humanml3d') {
             loadModels();
         } else {
             updateLoadingStatus('스킨 모델이 지정되지 않았습니다.', true);
@@ -983,6 +1288,11 @@
                 bvhMixer.update(delta);
             }
             
+            // HumanML3D 애니메이션 믹서 업데이트
+            if (humanml3dMixer) {
+                humanml3dMixer.update(delta);
+            }
+            
             controls.update();
             renderer.render(scene, camera);
         }
@@ -991,4 +1301,3 @@
     </script>
 </body>
 </html>
-```html

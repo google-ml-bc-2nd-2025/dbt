@@ -604,6 +604,19 @@ def create_dataset_create_tab(models_dir):
             </div>
             """)
     
+    # 설명 텍스트 편집 영역
+    with gr.Row():
+        new_description = gr.Textbox(
+            label="새 설명 텍스트",
+            placeholder="애니메이션에 대한 설명을 입력하세요...",
+            lines=3,
+            interactive=True
+        )
+    with gr.Row():
+        update_btn = gr.Button("설명 업데이트", variant="primary")
+        gen_npz_btn = gr.Button("학습 파일 생성", variant="secondary")
+        gen_unified_btn = gr.Button("학습 파일 통합 생성", variant="secondary")
+
     # 데이터셋 목록 테이블
     dataset_table = gr.Dataframe(
         headers=["애니메이션 이름", "설명 텍스트", "데이터 크기", "파일 경로"],
@@ -617,16 +630,7 @@ def create_dataset_create_tab(models_dir):
     with gr.Row():
         selected_file = gr.Textbox(label="선택된 파일 경로", interactive=False)
         selected_name = gr.Textbox(label="애니메이션 이름", interactive=False)
-    
-    # 설명 텍스트 편집 영역
-    with gr.Row():
-        new_description = gr.Textbox(
-            label="새 설명 텍스트",
-            placeholder="애니메이션에 대한 설명을 입력하세요...",
-            lines=3,
-            interactive=True
-        )
-    
+        
     # 계속 반복 여부 확인을 위한 체크박스 추가
     with gr.Row():
         continue_checkbox = gr.Checkbox(
@@ -635,10 +639,6 @@ def create_dataset_create_tab(models_dir):
             interactive=True
         )
     
-    with gr.Row():
-        update_btn = gr.Button("설명 업데이트", variant="primary")
-        gen_npz_btn = gr.Button("학습 파일 생성", variant="secondary")
-        gen_unified_btn = gr.Button("학습 파일 통합 생성", variant="secondary")
     
     result_message = gr.Textbox(label="결과", interactive=False)
     
