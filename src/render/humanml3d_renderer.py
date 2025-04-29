@@ -13,9 +13,12 @@ def render_humanml3d(anim_file):
 
     # 데이터 로드
     file_ext = Path(anim_file.name).suffix.lower()
+    # Remove the leading dot from the extension
+    if file_ext.startswith('.'):
+        file_ext = file_ext[1:]
     data = None
 
-    if file_ext == '.npy':
+    if file_ext == 'npy':
         npy = np.load(anim_file.name, allow_pickle=True)
         print(f"npy= {type(npy)}, shape={npy.shape if hasattr(npy, 'shape') else 'None'}")
         # 디버깅을 위해 npy 데이터의 처음 20개 요소 출력
@@ -39,7 +42,7 @@ def render_humanml3d(anim_file):
             # 일반 ndarray인 경우
             data = npy
             
-    elif file_ext == '.npz':
+    elif file_ext == 'npz':
         npz = np.load(anim_file.name, allow_pickle=True)
         # humanml3d 포맷에서 'motion' 또는 'poses' 키 사용
         if 'motion' in npz:

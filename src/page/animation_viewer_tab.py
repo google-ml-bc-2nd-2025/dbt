@@ -95,54 +95,12 @@ def create_animation_viewer_tab(VIEWER_PATH, MODELS_DIR):
                 file_ext = 'glb'
 
             # NPY 또는 NPZ 파일 처리 (HuamlML3D 형식)
-            if file_ext in ['.npy', '.npz']:
-                try:
-                    # import 문 추가
-                    import numpy as np
-                    from converter.convert_mdm_to_glb import create_improved_glb_animation
-
-                    # 애니메이션 데이터 로드 (MDM 형식)
-                    motion_data_raw = np.load(anim.name, allow_pickle=True)
-                    
-                    # motion 키가 있는지 확인
-                    if isinstance(motion_data_raw, np.ndarray) and motion_data_raw.dtype == np.dtype('O') and isinstance(motion_data_raw.item(), dict):
-                        if 'motion' in motion_data_raw.item():
-                            motion_data = motion_data_raw.item()['motion']
-                    elif isinstance(motion_data, dict) and 'motion' in motion_data_raw:
-                        motion_data = motion_data_raw['motion']
-                    else:
-                        raise ValueError("지원하지 않는 파일 형식입니다.")
-                    
-                    print(f"Motion 데이터 형태: {type(motion_data)}")
-
-                    if isinstance(motion_data, np.ndarray):
-                        print(f"Shape: {motion_data.shape}, 차원: {motion_data.ndim}")
-                        
-                    # 애니메이션을 스킨에 직접 적용 (새 함수 사용)
-                    unique_id = str(uuid.uuid4())[:8]
-                    result_filename = f"anim_{unique_id}.glb"
-                    result_path = os.path.join(MODELS_DIR, result_filename)
-                    
-                    # 새 함수 호출 - 미리 로드된 스킨에 애니메이션 적용
-                    output_path = create_improved_glb_animation(motion_data, result_path, file_ext)
-                    
-                    if output_path:
-                        # 애니메이션 적용된 GLB 모델만 뷰어에 전달
-                        from types import SimpleNamespace
-                        anim_glb = SimpleNamespace()
-                        anim_glb.name = output_path
-                        return apply_animation(skin, anim_glb, VIEWER_PATH, MODELS_DIR, file_ext)
-                    else:
-                        return "애니메이션 적용 실패"
-                        
-                except Exception as e:
-                    import traceback
-                    traceback.print_exc()
-                    return f"SMPL 애니메이션 적용 오류: {str(e)}"
+            if file_ext in ['npy', 'npz']:
+                return render_humanml3d(anim)
 
             # glb의 경우 skin, anim 모두 지정 필요.
             # 기존 glb에 skin, anim 모두 있다면 별도 처리 (추후 구현 필요)
-            return apply_animation(skin, anim, VIEWER_PATH, MODELS_DIR)
+            return apply_animation(skin, anim, VIEWER_PATH, MODELS_DIR, file_ext)
         
         # 버튼 클릭 이벤트 함수 등록
         apply_btn.click(

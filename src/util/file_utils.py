@@ -33,12 +33,17 @@ def apply_animation(skin_model, anim_model, viewer_path, models_dir, file_ext="g
     Returns:
         HTML 문자열 (iframe으로 뷰어 표시)
     """
-    
-    if skin_model is None:
-        return "스킨 모델을 먼저 업로드해주세요."
+    print(f"file_ext = {file_ext}")
+    if file_ext == "glb":
+        if skin_model is None:
+            return "스킨 모델을 먼저 업로드해주세요."
+        else:
+            skin_url = save_model(skin_model, "skin", models_dir)
+    else:
+        skin_url = None
 
     # 모델 저장 및 URL 생성
-    skin_url = save_model(skin_model, "skin", models_dir)
+    
     anim_url = None
     anim_type = "glb"  # 기본값
     
@@ -117,7 +122,11 @@ def apply_animation(skin_model, anim_model, viewer_path, models_dir, file_ext="g
             anim_type = "bvh"
 
     # 뷰어 URL 생성 (파일 URL 형식으로)
-    viewer_url = f"/file={viewer_path}?skin={skin_url}"
+    viewer_url = f"/file={viewer_path}?"
+    if skin_url:
+        viewer_url += f"skin={skin_url}"
+    else:
+        viewer_url += f"skin="
     if anim_url:
         viewer_url += f"&anim={anim_url}&animType={anim_type}"
     print(f"뷰어 URL: {viewer_url}")
@@ -186,136 +195,86 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
         # 프롬프트 전송
         progress(0, desc="프롬프트 전송 중...")
         response = requests.post(
-            'http://localhost:8000/api/prompt',
+            'http://47.186.55.156:57179/predict',
             headers={'Content-Type': 'application/json'},
-            json={'prompt': prompt_text},
+            json={
+                'prompt': prompt_text,
+                "num_repetitions": 1,
+                "output_format": "json_file"
+            }
         )
         
         if response.status_code == 200:
-            result_data = response.json()
-            task_id = result_data.get('task_id')
+            result = response.json()
+            try:
+                json_file = result.get('json_file', {})
+                for key in json_file.keys():
+                    print(f"Key: {key}")
+
+                # with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as json_tmp_file:
+                #     json.dump(json_file, json_tmp_file, ensure_ascii=False, indent=4)
+                #     json_tmp_path = json_tmp_file.name
+                #     print(f"JSON 데이터를 임시 파일에 저장: {json_tmp_path}")
+            except Exception as e:
+                print(f"JSON 파일 저장 오류: {str(e)}")
+                raise ValueError(str(e))
+
+            # thetas를 numpy 배열로 변환
+            thetas = json_file.get('motions', [])
+            pose_array = np.array(thetas, dtype=np.float32)
+            # root_translation을 numpy 배열로 변환
+            root_translation = json_file.get('root_translation', [])
+            trans_array = np.array(root_translation, dtype=np.float32)
+            # betas는 빈 배열로 설정
+            betas_array = np.array([], dtype=np.float32)
             
-            if not task_id:
-                return f"""
-                <div id="prompt-result">
-                    <p style="color: red;">작업 ID가 없습니다</p>
-                    <p style="color: #666; font-size: 0.9em;">서버 응답에 작업 ID가 포함되어 있지 않습니다.</p>
-                </div>
-                """
+            # 전체 모션 데이터를 하나의 numpy 배열로 결합
+            motion_array = np.concatenate([
+                pose_array.reshape(-1),
+                betas_array,
+                trans_array.reshape(-1)
+            ])
+
+            print(f'result_data = {response.status_code}, {motion_array.shape}')
+            animation_data = pose_array
+            print(f'motion_data is {type(animation_data)} {pose_array.shape}')
+            try:
+                motion_data_array = animation_data.reshape(120, 22, 3)
+                print(f'motion_data_array is {motion_data_array.shape}')
+            except ValueError as e:
+                print(f"Reshape error: {e}. Ensure animation_data has the correct size.")
+                return f"애니메이션 데이터 크기가 올바르지 않습니다. 오류: {e}"
             
-            # 상태 추적 시작
-            max_retries = 60  # 180초 (3초 간격)
-            retry_count = 0
-            last_state = None
-            
-            for i in progress.tqdm(range(max_retries), desc="작업 진행 중..."):
-                try:
-                    status_response = requests.get(
-                        f'http://localhost:8000/api/tasks/{task_id}',
-                    )
-                    
-                    if status_response.status_code == 200:
-                        status_data = status_response.json()
-                        current_status = status_data.get('status')
-                        
-                        # 상태가 변경되었을 때만 로그 출력
-                        if current_status != last_state:
-                            print(f"작업 상태 변경: {last_state} -> {current_status}")
-                            last_state = current_status
+            try:
+                # 딕셔너리로 래핑하여 #terminalSelection과 같은 형식으로 만들기
+                motion_dict = {
+                    'motion': motion_data_array,
+                    'text': ['good job'],
+                    'lengths': np.array([120]),
+                    'num_samples': 1,
+                    'num_repetitions': 1
+                }
+                pose_data = motion_dict
+                with tempfile.NamedTemporaryFile(suffix='.npy', delete=False) as tmp_file:
+                    tmp_path = tmp_file.name
+                    # 변환된 pose 데이터를 numpy 파일로 저장
+                    np.save(tmp_path, pose_data)
+                    print(f"애니메이션 데이터를 임시 파일에 저장: {tmp_path}")
 
-                        # None 상태나 processing 상태일 때는 계속 대기
-                        if current_status is None or current_status == 'processing':
-                            time.sleep(3)  # 3초 대기
-                            continue
-
-                        if current_status == 'completed':
-                            # 모션 데이터 조회
-                            parent_4_data = status_data.get('data', {})
-                            print(f'parent_4_data is {type(parent_4_data)}, {parent_4_data.keys()}')
-                            motion_data = parent_4_data["motion"]
-                            print(f'motion_data is {type(motion_data)}')
-                            # Print the motion_data type and structure for debugging
-                            # Print motion_data shape and info for debugging
-                            if isinstance(motion_data, list):
-                                print(f"motion_data is a list of length {len(motion_data)}")
-                                if motion_data and isinstance(motion_data[0], list):
-                                    print(f"First element has length {len(motion_data[0])}")
-                            else:
-                                print(f"motion_data shape: {np.array(motion_data).shape}")
-
-                            # Reshape motion_data to (1, 22, 3, 120)
-                            # 
-                            motion_data_array = np.array(motion_data)
-                            if motion_data_array.ndim == 2:  # Likely (120, 66) or similar
-                                frames = motion_data_array.shape[0]
-                                motion_data_reshaped = motion_data_array.reshape(22, 3, frames)
-                            elif motion_data_array.ndim == 3:  # Might already be (1, 120, 66)
-                                motion_data_reshaped = motion_data_array.reshape(22, 3, motion_data_array.shape[1])
-                            else:
-                                motion_data_reshaped = motion_data_array.reshape(22, 3, 120)
-
-                            try:
-                                # 딕셔너리로 래핑하여 #terminalSelection과 같은 형식으로 만들기
-                                motion_dict = {
-                                    'motion': motion_data_reshaped,
-                                    'text': ['good job'],
-                                    'lengths': np.array([120]),
-                                    'num_samples': 1,
-                                    'num_repetitions': 1
-                                }
-                                pose_data = motion_dict
-                                print(f"#terminalSelection 형식으로 변환 완료: {type(pose_data)}")
-
-                                with tempfile.NamedTemporaryFile(suffix='.npy', delete=False) as tmp_file:
-                                    tmp_path = tmp_file.name
-                                    # 변환된 pose 데이터를 numpy 파일로 저장
-                                    np.save(tmp_path, pose_data)
-                                    print(f"애니메이션 데이터를 임시 파일에 저장: {tmp_path}")
-
-                                # 임시 파일을 이용하여 애니메이션 처리
-                                try:
-                                    print(f"애니메이션 변환 성공: {tmp_path}")
-                                    return render_humanml3d(tmp_file)
-                                except Exception as e:
-                                    print(f"애니메이션 변환 실패: {str(e)}")
-                                    return f"""
-                                    <div id="prompt-result">
-                                        <p style="color: red;">애니메이션 처리 오류</p>
-                                        <p style="color: #666; font-size: 0.9em;">{str(e)}</p>
-                                    </div>
-                                    """
-                                else:
-                                    return f"""
-                                    <div id="prompt-result">
-                                        <p style="color: green;">모션 생성 실패!</p>
-                                        <pre>생성에 실패했습니다.</pre>
-                                    </div>
-                                    """
-                                
-                            except Exception as e:
-                                print(f"데이터 변환 오류: {str(e)}")
-                                return f"""
-                                <div id="prompt-result">
-                                    <p style="color: red;">데이터 변환 오류</p>
-                                    <p style="color: #666; font-size: 0.9em;">{str(e)}</p>
-                                </div>
-                                """
-                        
-                        elif current_status == 'failed':
-                            error_message = status_data.get('error', {}).get('message', '알 수 없는 오류가 발생했습니다.')
-                            return f"""
-                            <div id="prompt-result">
-                                <p style="color: red;">모션 생성 실패</p>
-                                <p style="color: #666; font-size: 0.9em;">{error_message}</p>
-                            </div>
-                            """
-                    
-                except requests.exceptions.RequestException as e:
-                    print(f"상태 확인 중 네트워크 오류: {str(e)}")
-                    retry_count += 1
-                    continue
-                
-                retry_count += 1
+                    # 임시 파일을 이용하여 애니메이션 처리
+                    try:
+                        print(f"애니메이션 변환 성공: {tmp_path}")
+                        return render_humanml3d(tmp_file)
+                    except Exception as e:
+                        print(f"애니메이션 변환 실패: {str(e)}")
+                        return f"""
+                        <div id="prompt-result">
+                            <p style="color: red;">애니메이션 처리 오류</p>
+                            <p style="color: #666; font-size: 0.9em;">{str(e)}</p>
+                        </div>
+                        """
+            except Exception as e:
+                print(f"요청 오류: {str(e)}")
             
             # 최대 재시도 횟수 도달
             return f"""
@@ -346,73 +305,3 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
             <p style="color: #666; font-size: 0.9em;">{str(e)}</p>
         </div>
         """
-
-# 버튼 클릭 이벤트 처리를 위한 함수 정의
-def process_animation_in_generated(anim_path):
-    """애니메이션 파일 형식에 따라 적절한 처리 함수를 호출"""
-    # 스킨이 없으면 오류 메시지 표시
-    if anim_path is None:
-        return """
-        <div style="width: 100%; height: 500px; background-color: #333; border-radius: 8px; 
-                    display: flex; justify-content: center; align-items: center; color: #ccc;">
-            <div style="text-align: center;">
-                <h3>오류</h3>
-                <p>모델이 정상적이지 않습니다.</p>
-            </div>
-        </div>
-        """
-    
-    # Constants needed for further processing
-    MODELS_DIR = Path(__file__).parent / "static" / "models"
-    MODELS_DIR.mkdir(exist_ok=True, parents=True)
-    VIEWER_PATH = Path(__file__).parent / "static" / "viewer" / "index.html"
-
-    # Create a temporary file object from the npy file
-    with tempfile.NamedTemporaryFile(suffix=Path(anim_path).suffix, delete=False) as tmp:
-        # Copy the content of the original file
-        tmp.write(open(anim_path, 'rb').read())
-        tmp_path = tmp.name
-
-    # Create a MockFile object that mimics gr.File
-    class MockFile:
-        def __init__(self, path):
-            self.name = path
-            
-    # Create anim object similar to what gr.File would return
-    anim = MockFile(tmp_path)
-
-    # Also need to have a skin model for the viewer
-    # Use default skin.glb from static directory if available
-    skin_path = Path(__file__).parent / "static" / "tpose.glb"
-
-    if skin_path.exists():
-        skin = MockFile(str(skin_path))
-    else:
-        return f"""
-        <div style="width: 100%; height: 500px; background-color: #333; border-radius: 8px; 
-                    display: flex; justify-content: center; align-items: center; color: #ccc;">
-            <div style="text-align: center;">
-                <h3>기본 포즈 skin 파일없음 in file_utils</h3>
-            </div>
-        </div>
-        """
-    
-    file_ext = Path(anim.name).suffix.lower()
-    # NPY 또는 NPZ 파일 처리 (SMPL 애니메이션)
-    if file_ext in ['.npy', '.npz']:
-        try:
-            anim = apply_to_glb(skin, anim, VIEWER_PATH, MODELS_DIR, return_type='glb')
-        except Exception as e:
-            return f"""
-            <div style="width: 100%; height: 500px; background-color: #333; border-radius: 8px; 
-                        display: flex; justify-content: center; align-items: center; color: #ccc;">
-                <div style="text-align: center;">
-                    <h3>SMPL 애니메이션 적용 오류</h3>
-                    <p>{str(e)}</p>
-                </div>
-            </div>
-            """
-    # 기존 GLB/BVH 파일 처리
-    print(f"skin = {skin}")
-    print(f"anim = {anim}")
-    return apply_animation(skin, anim, VIEWER_PATH, MODELS_DIR)
