@@ -512,7 +512,7 @@ def create_dataset_create_tab(models_dir):
             # 출력 파일 경로 생성
             output_dir = Path(directory)
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            output_path = output_dir / f"motionclip_dataset_{timestamp}.pt"
+            output_path = output_dir / f"mdm_dataset_{timestamp}.pt"
             
             # 모션 데이터 수집
             motions = []
@@ -611,7 +611,7 @@ def create_dataset_create_tab(models_dir):
     # 설명 텍스트 편집 영역
     with gr.Row():
         new_description = gr.Textbox(
-            label="새 설명 텍스트",
+            label="새 설명 텍스트(한 줄 마다 애니메이션 구간에 대한 설명과 시간을 입력. 예) 앞으로 걸어가다 #0.0#0.5(줄바꿈)뒤로 돌아간다. #0.5#1.2)",
             placeholder="애니메이션에 대한 설명을 입력하세요...",
             lines=3,
             interactive=True

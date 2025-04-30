@@ -1,12 +1,10 @@
 
 import numpy as np
-import json
-import base64
 import uuid
 import os
-import shutil
 from pathlib import Path
 from util.model_utils import save_model
+from util.file_utils import cleanup_temp_files
 
 def render_humanml3d(anim_file):
     print(f"[render_humanml3d] 애니메이션 파일 처리: {anim_file.name}")
@@ -91,6 +89,7 @@ def render_humanml3d(anim_file):
     MODELS_DIR = Path(__file__).parent.parent / "static" / "models"
     MODELS_DIR.mkdir(exist_ok=True, parents=True)
     temp_npy_path = MODELS_DIR / f"temp_humanml3d_{unique_id}.npy"
+    cleanup_temp_files(MODELS_DIR)  # 이전 임시 파일 정리
 
     # 임시 파일로 저장
     np.save(temp_npy_path, data)

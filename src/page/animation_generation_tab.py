@@ -6,7 +6,8 @@ import gradio as gr
 import os
 import uuid  # uuid 모듈 추가
 from pathlib import Path
-from util.file_utils import apply_animation, send_prompt
+from util.file_utils import apply_animation
+from render.request_to_server import send_prompt
 from render.smpl_animation import apply_to_glb
 
 def create_animation_generation_tab(VIEWER_PATH, MODELS_DIR):

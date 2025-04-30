@@ -1,0 +1,132 @@
+import numpy as np
+import tempfile
+from render.humanml3d_renderer import render_humanml3d
+import requests
+import gradio as gr
+
+def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
+    """
+    프롬프트를 전송하고 결과를 처리하는 함수
+    
+    Args:
+        prompt_text: 사용자 입력 프롬프트
+        progress: Gradio Progress 컴포넌트
+    """
+    
+    if not prompt_text.strip():
+        return "프롬프트를 입력해주세요."
+    
+    try:
+        # 프롬프트 전송
+        progress(0, desc="프롬프트 전송 중...")
+        response = requests.post(
+            'http://69.176.92.107:30748/predict',
+            headers={'Content-Type': 'application/json'},
+            json={
+                'prompt': prompt_text,
+                "num_repetitions": 1,
+                "output_format": "json_file"
+            }
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            try:
+                json_file = result.get('json_file', {})
+                for key in json_file.keys():
+                    print(f"Key: {key}")
+
+                # with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as json_tmp_file:
+                #     json.dump(json_file, json_tmp_file, ensure_ascii=False, indent=4)
+                #     json_tmp_path = json_tmp_file.name
+                #     print(f"JSON 데이터를 임시 파일에 저장: {json_tmp_path}")
+            except Exception as e:
+                print(f"JSON 파일 저장 오류: {str(e)}")
+                raise ValueError(str(e))
+
+            # thetas를 numpy 배열로 변환
+            thetas = json_file.get('motions', [])
+            pose_array = np.array(thetas, dtype=np.float32)
+            # root_translation을 numpy 배열로 변환
+            root_translation = json_file.get('root_translation', [])
+            trans_array = np.array(root_translation, dtype=np.float32)
+            # betas는 빈 배열로 설정
+            betas_array = np.array([], dtype=np.float32)
+            
+            # 전체 모션 데이터를 하나의 numpy 배열로 결합
+            motion_array = np.concatenate([
+                pose_array.reshape(-1),
+                betas_array,
+                trans_array.reshape(-1)
+            ])
+
+            print(f'result_data = {response.status_code}, {motion_array.shape}')
+            animation_data = pose_array
+            print(f'motion_data is {type(animation_data)} {pose_array.shape}')
+            try:
+                motion_data_array = animation_data.reshape(120, 22, 3)
+                print(f'motion_data_array is {motion_data_array.shape}')
+            except ValueError as e:
+                print(f"Reshape error: {e}. Ensure animation_data has the correct size.")
+                return f"애니메이션 데이터 크기가 올바르지 않습니다. 오류: {e}"
+            
+            try:
+                # 딕셔너리로 래핑하여 #terminalSelection과 같은 형식으로 만들기
+                motion_dict = {
+                    'motion': motion_data_array,
+                    'text': ['good job'],
+                    'lengths': np.array([120]),
+                    'num_samples': 1,
+                    'num_repetitions': 1
+                }
+                pose_data = motion_dict
+                with tempfile.NamedTemporaryFile(suffix='.npy', delete=False) as tmp_file:
+                    tmp_path = tmp_file.name
+                    # 변환된 pose 데이터를 numpy 파일로 저장
+                    np.save(tmp_path, pose_data)
+                    print(f"애니메이션 데이터를 임시 파일에 저장: {tmp_path}")
+
+                    # 임시 파일을 이용하여 애니메이션 처리
+                    try:
+                        print(f"애니메이션 변환 성공: {tmp_path}")
+                        return render_humanml3d(tmp_file)
+                    except Exception as e:
+                        print(f"애니메이션 변환 실패: {str(e)}")
+                        return f"""
+                        <div id="prompt-result">
+                            <p style="color: red;">애니메이션 처리 오류</p>
+                            <p style="color: #666; font-size: 0.9em;">{str(e)}</p>
+                        </div>
+                        """
+            except Exception as e:
+                print(f"요청 오류: {str(e)}")
+            
+            # 최대 재시도 횟수 도달
+            return f"""
+            <div id="prompt-result">
+                <p style="color: orange;">모션 생성 시간 초과</p>
+                <p style="color: #666; font-size: 0.9em;">서버가 바쁠 수 있습니다. 잠시 후 다시 시도해주세요.</p>
+            </div>
+            """
+        else:
+            return f"""
+            <div id="prompt-result">
+                <p style="color: red;">서버 오류 발생 (상태 코드: {response.status_code})</p>
+                <p style="color: #666; font-size: 0.9em;">잠시 후 다시 시도해주세요.</p>
+            </div>
+            """
+            
+    except requests.exceptions.RequestException as e:
+        return f"""
+        <div id="prompt-result">
+            <p style="color: red;">네트워크 오류 발생</p>
+            <p style="color: #666; font-size: 0.9em;">{str(e)}</p>
+        </div>
+        """
+    except Exception as e:
+        return f"""
+        <div id="prompt-result">
+            <p style="color: red;">알 수 없는 오류 발생</p>
+            <p style="color: #666; font-size: 0.9em;">{str(e)}</p>
+        </div>
+        """
