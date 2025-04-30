@@ -31,9 +31,8 @@ def encode_tagged(sentence):
     lines = sentence.splitlines()
     sentences = ""
     for line in lines:
-        if '#' in line:
-            line, timetag = split_by_first_hash(line)
-            print(f'라인: {line}, 타임태그: {timetag}')
+        line, timetag = split_by_first_hash(line)
+        print(f'라인: {line}, 타임태그: {timetag}')
         words, poses = process_text(line)
         token_str = ' '.join(f"{w}/{p}" for w, p in zip(words, poses))
         sentence_in_line = line + " " + token_str
@@ -52,8 +51,7 @@ def decode_tagged(encoded_sentence):
     lines = encoded_sentence.splitlines()
     tokens = []
     for line in lines:
-        if '#' in line:
-            line, timetag = split_by_first_hash(line)
+        line, timetag = split_by_first_hash(line)
         line = " ".join(part for part in line.split() if "/" not in part)
         line = ''.join(char for char in line if char not in ['!', '?', ',', ':', ';'])
         tokens.append(f'{line.strip()}{timetag.strip()}\n')
