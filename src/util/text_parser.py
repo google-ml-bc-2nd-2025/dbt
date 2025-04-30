@@ -19,19 +19,50 @@ def process_text(sentence):
         pos_list.append(token.pos_)
     return word_list, pos_list
 
+def split_by_first_hash(text, split_char='#'):
+    index = text.find('#')  # 첫 번째 #의 인덱스 찾기
+    if index != -1:
+        return text[:index], text[index:]  # # 포함해서 뒤쪽에 붙이기
+    else:
+        return text, ''  # #이 없는 경우
+
 #원문 --> 토큰붙은 문장 변환기 
 def encode_tagged(sentence):
-    words, poses = process_text(sentence)
-    token_str = ' '.join(f"{w}/{p}" for w, p in zip(words, poses))
-    return token_str
+    lines = sentence.splitlines()
+    sentences = ""
+    for line in lines:
+        if '#' in line:
+            line, timetag = split_by_first_hash(line)
+            print(f'라인: {line}, 타임태그: {timetag}')
+        words, poses = process_text(line)
+        token_str = ' '.join(f"{w}/{p}" for w, p in zip(words, poses))
+        sentence_in_line = line + " " + token_str
+        if timetag:
+            sentence_in_line += f"{timetag.strip()}"
+        else:
+            sentence_in_line += "#0.0#0.0"
+        sentences += sentence_in_line.strip() + "\n"
+        print(f"토큰화된 문장: {sentence_in_line.strip()}")
+    
+    print(f"인코딩된 문장: {sentences}")
+    return sentences
 
 #토큰붙은 문장 --> 원문 변환기
 def decode_tagged(encoded_sentence):
-    tokens = encoded_sentence.strip().split()
+    lines = encoded_sentence.splitlines()
+    tokens = []
+    for line in lines:
+        if '#' in line:
+            line, timetag = split_by_first_hash(line)
+        line = " ".join(part for part in line.split() if "/" not in part)
+        line = ''.join(char for char in line if char not in ['!', '?', ',', ':', ';'])
+        tokens.append(f'{line.strip()}{timetag.strip()}\n')
     
-    words = []
-    for tok in tokens:
-        if "/" in tok:
-            word, _pos = tok.rsplit("/", 1)
-            words.append(word)
-    return " ".join(words)
+    print(f"{encoded_sentence} -> 디코딩된 토큰: {tokens}")
+    return ''.join(tokens)
+    # words = []
+    # for tok in tokens:
+    #     if "/" in tok:
+    #         word, _pos = tok.rsplit("/", 1)
+    #         words.append(word)
+    # return " ".join(words)

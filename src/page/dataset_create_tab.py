@@ -48,8 +48,9 @@ def create_dataset_create_tab(models_dir):
         try:
             data = np.load(file_path, allow_pickle=True)
             text = data.get('text')
+            print(f"NPZ 파일에서 텍스트 데이터 로드: {text}")
             text_str = text_parser.decode_tagged(text[0]) if isinstance(text, np.ndarray) and text.size > 0 else "설명 없음"
-            
+            print(f"NPZ 파일에서 텍스트 데이터: {text_str}")
             # 포즈 데이터 형태 확인
             pose_shape = str(data.get('pose').shape) if 'pose' in data else "데이터 없음"
             
@@ -170,6 +171,8 @@ def create_dataset_create_tab(models_dir):
                 if not description_text:
                     description_text = f"지원되지 않는 파일 형식: {file_ext}"
                 
+            print(f"파일 정보: {file_path}, 이름: {animation_name}, 설명: {description_text}, 형태: {shape_info}")
+            print(f'정리된 텍스트 {text_parser.decode_tagged(description_text)}')
             return {
                 "path": file_path,
                 "name": animation_name,
@@ -251,7 +254,8 @@ def create_dataset_create_tab(models_dir):
                 try:
                     # 텍스트 파일에 설명 저장
                     with open(txt_file_path, 'w', encoding='utf-8') as f:
-                        full_description = f"{new_description.strip()}.{text_parser.encode_tagged(new_description.strip())}#0.0#0.0"
+                        print(f'new_description = {new_description}')
+                        full_description = text_parser.encode_tagged(new_description.strip())
                         f.write(full_description)
                     
                     return f"{Path(file_path).stem} 모델의 설명이 저장되었습니다. ({txt_file_path})"
@@ -530,7 +534,7 @@ def create_dataset_create_tab(models_dir):
                     name_parts = re.split(r'[ _\-.]', Path(file_path).stem)
                     description = ', '.join([part for part in name_parts if part])
                     with open(txt_file_path, 'w', encoding='utf-8') as f:
-                        f.write(f'{description}.{text_parser.encode_tagged(description.strip())}#0.0#0.0')
+                        f.write(text_parser.encode_tagged(description.strip()))
                 try:
                     # 여기서 실제 GLB/FBX 변환 코드 구현 필요
                     # 임시 구현: 더미 데이터 생성

@@ -1,1 +1,3 @@
-Crouched, Walking.crouch/VERB walk/VERB#0.0#0.0
+Crouched Walking. Crouched/PROPN walking/NOUN#0.0#0.1
+Crouched Walking. Crouched/PROPN walking/NOUN#0.1#0.3
+turning Walking. turn/VERB walk/VERB#0.4#0.7
