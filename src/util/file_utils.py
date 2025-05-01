@@ -151,34 +151,3 @@ def apply_animation(skin_model, anim_model, viewer_path, models_dir, file_ext="g
         }});
     </script>
     """
-
-def axis_angle_to_rotation_6d(pose_aa):  # (T, 72) or (T, 24, 3)
-    """
-    축-각도(axis-angle) 회전 표현을 6D 회전 표현으로 변환합니다.
-    
-    Args:
-        pose_aa: 축-각도 포즈 배열 (T, 72) 또는 (T, 24, 3)
-    
-    Returns:
-        6D 회전 표현 배열 (T, 22*6=132)
-    """
-    if len(pose_aa.shape) == 3:  # (T, 24, 3)
-        T, joints, _ = pose_aa.shape
-        pose_aa_reshaped = pose_aa.reshape(T, joints * 3)
-    else:  # (T, 72)
-        T = pose_aa.shape[0]
-        pose_aa_reshaped = pose_aa
-    
-    pose_6d = np.zeros((T, 22 * 6), dtype=np.float32)  # 첫 22개 관절만 사용
-
-    for t in range(T):
-        frame_aa = pose_aa_reshaped[t].reshape(24, 3)  # (24, 3)
-        frame_6d = []
-        for joint_idx in range(22):  # 첫 22개 관절만 사용
-            rotmat = R.from_rotvec(frame_aa[joint_idx]).as_matrix()  # (3, 3)
-            rot_6d = rotmat[:, :2].reshape(6)  # 앞 두 열 → (6,)
-            frame_6d.append(rot_6d)
-        pose_6d[t] = np.concatenate(frame_6d)
-
-    return pose_6d  # (T, 132)
-

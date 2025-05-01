@@ -19,7 +19,7 @@ import io
 from io import BytesIO
 import base64
 
-from model.bone_mappings import SMPL_JOINT_NAMES, find_matching_bones, get_smpl_joint_index
+from model.bone_mappings import SMPL_JOINT_NAMES, find_matching_bones
 from model.smpl import mixamo_to_smpl_map as MIXAMO_TO_SMPL
 from util.viewer_template import create_viewer_html
 from converter.convert_mdm_to_glb import create_improved_glb_animation

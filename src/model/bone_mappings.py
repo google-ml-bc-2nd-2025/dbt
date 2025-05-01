@@ -3,15 +3,6 @@
 """
 from model.smpl import smpl_bone_list as SMPL_JOINT_NAMES
 
-# SMPL 본 이름 순서 (24개)
-# SMPL_JOINT_NAMES = [
-#     "pelvis", "left_hip", "right_hip", "spine1", "left_knee", "right_knee",
-#     "spine2", "left_ankle", "right_ankle", "spine3", "left_foot", "right_foot",
-#     "neck", "left_collar", "right_collar", "head", "left_shoulder", "right_shoulder",
-#     "left_elbow", "right_elbow", "left_wrist", "right_wrist"
-#     # , "left_hand", "right_hand"
-# ]
-
 # Mixamo → SMPL 관절 이름 매핑 - 더 다양한 이름 패턴 추가
 MIXAMO_TO_SMPL = {
     # 기본 매핑
@@ -89,13 +80,6 @@ MIXAMO_PRIORITY = {
     "left_hand": ["LeftHand", "LeftHandIndex1", "mixamorig:LeftHand", "mixamorig:LeftHandIndex1"],
     "right_hand": ["RightHand", "RightHandIndex1", "mixamorig:RightHand", "mixamorig:RightHandIndex1"]
 }
-
-def get_smpl_joint_index(joint_name):
-    """SMPL 관절 이름에 해당하는 인덱스를 반환"""
-    try:
-        return SMPL_JOINT_NAMES.index(joint_name)
-    except ValueError:
-        return -1
 
 def find_matching_bones(target_skeleton_bones, source_mapping=MIXAMO_TO_SMPL, nodes=None):
     """

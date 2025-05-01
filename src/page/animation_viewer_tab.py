@@ -68,10 +68,6 @@ def create_animation_viewer_tab(VIEWER_PATH, MODELS_DIR):
                     </div>
                 </div>
                 """)
-                
-               
-                # 프롬프트 결과 출력 영역
-                prompt_result = gr.HTML(visible=True)
         
         # 버튼 클릭 이벤트 처리를 위한 함수 정의
         def process_animation(skin, anim):

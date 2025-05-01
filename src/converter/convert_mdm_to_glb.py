@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 # 뼈대 구조 정의 (이름과 계층 구조)
+# skeleton structure
 bone_names = [
     "mixamorig:Hips",              # 0
     "mixamorig:LeftUpLeg",         # 1
@@ -30,6 +31,7 @@ bone_names = [
 ]
 
 # 부모-자식 관계 정의
+# hierarchy structure
 hierarchy = {
     1: 0,   # LeftUpLeg -> Hips
     2: 0,   # RightUpLeg -> Hips
@@ -54,35 +56,8 @@ hierarchy = {
     21: 19  # RightHand -> RightForeArm
 }
 
-# 관절 위치 (T-포즈)
-positions = {
-    0: [0.0, 0.0, 0.0],              # Hips
-    1: [-0.1, -0.05, 0.0],           # LeftUpLeg
-    2: [0.1, -0.05, 0.0],            # RightUpLeg
-    3: [0.0, 0.1, 0.0],              # Spine
-    4: [-0.1, -0.5, 0.0],            # LeftLeg
-    5: [0.1, -0.5, 0.0],             # RightLeg
-    6: [0.0, 0.2, 0.0],              # Spine1
-    7: [-0.1, -1.0, 0.0],            # LeftFoot
-    8: [0.1, -1.0, 0.0],             # RightFoot
-    9: [0.0, 0.3, 0.0],              # Spine2
-    10: [-0.1, -1.1, 0.1],           # LeftToeBase
-    11: [0.1, -1.1, 0.1],            # RightToeBase
-    12: [0.0, 0.4, 0.0],             # Neck
-    13: [-0.1, 0.4, 0.0],            # LeftShoulder
-    14: [0.1, 0.4, 0.0],             # RightShoulder
-    15: [0.0, 0.5, 0.0],             # Head
-    16: [-0.3, 0.4, 0.0],            # LeftArm
-    17: [0.3, 0.4, 0.0],             # RightArm
-    18: [-0.6, 0.4, 0.0],            # LeftForeArm
-    19: [0.6, 0.4, 0.0],             # RightForeArm
-    20: [-0.9, 0.4, 0.0],            # LeftHand
-    21: [0.9, 0.4, 0.0]              # RightHand
-}
-
 # 절대 위치(global)를 상대 위치(local)로 변환하는 함수
-
-# global_to_local_positions 함수 수정
+# convert global positions to local positions
 def global_to_local_positions(global_positions, hierarchy, correct_axes=True):
     """
     전역(절대) 위치를 지역(상대) 위치로 변환하고 좌표계를 보정
@@ -98,11 +73,10 @@ def global_to_local_positions(global_positions, hierarchy, correct_axes=True):
     frames, joints, _ = global_positions.shape
     
     # 좌표축 보정 없이 먼저 상대 위치 계산
+    # calculate local positions without axis correction
     local_positions = np.zeros_like(global_positions)
     
-    # 각 프레임에 대해
     for f in range(frames):
-        # 각 관절에 대해
         for j in range(joints):
             if j == 0 or j not in hierarchy:  # 루트 노드는 절대 위치 그대로 사용
                 local_positions[f, j] = global_positions[f, j]
@@ -183,7 +157,7 @@ def create_improved_glb_animation(motion_data, output_path=None, fps=30, target_
     
     try:
         # 7. 베이스 GLB 템플릿 로드 - 기존 골격 구조 유지를 위해
-        base_glb_path = Path(__file__).parent / '../static/models/base_skin.glb'
+        base_glb_path = Path(__file__).parent / '../static/tpose.glb'
         print(f"기본 GLB 템플릿 로드 중: {base_glb_path}")
 
         if os.path.exists(base_glb_path):
@@ -520,289 +494,3 @@ def fix_extensions_extras(obj):
                     fix_extensions_extras(item)
             elif hasattr(v, "__dict__"):
                 fix_extensions_extras(v)
-
-def apply_animation_to_skin(skin_model_path, motion_data, output_path=None, fps=30):
-    """
-    미리 로딩된 스킨 모델(GLB)에 모션 데이터를 적용하여 애니메이션 GLB 생성
-    
-    Args:
-        skin_model_path: 스킨 모델 GLB 파일 경로
-        motion_data: (F, 22, 3) 또는 (22, 3, F) 형태의 본 위치 데이터
-        output_path: 출력 파일 경로 (None이면 임시 파일 생성)
-        fps: 애니메이션 프레임 레이트
-    
-    Returns:
-        output_path: 생성된 GLB 파일 경로
-    """
-    import os
-    import shutil
-    import traceback
-    import numpy as np
-    import uuid
-    from pathlib import Path
-    
-    print(f"\n===== 스킨 모델에 애니메이션 적용 시작 =====")
-    print(f"스킨 모델: {skin_model_path}")
-    
-    try:
-        # 1. 데이터 형태 정규화
-        if motion_data.ndim == 4:  # (N, 22, 3, F) 배치 형태
-            anim_data = motion_data[0]
-            anim_data = np.transpose(anim_data, (2, 0, 1))
-        elif motion_data.ndim == 3:
-            if motion_data.shape[0] == 22 and motion_data.shape[1] == 3:
-                anim_data = np.transpose(motion_data, (2, 0, 1))
-            elif motion_data.shape[1] == 22 and motion_data.shape[2] == 3:
-                anim_data = motion_data
-            else:
-                raise ValueError(f"지원되지 않는 데이터 형태: {motion_data.shape}")
-        else:
-            raise ValueError(f"지원되지 않는 데이터 차원: {motion_data.ndim}")
-        
-        print(f"정규화된 데이터 형태: {anim_data.shape}")
-        
-        # 2. 출력 경로 설정
-        if output_path is None:
-            unique_id = str(uuid.uuid4())[:8]
-            output_path = str(Path(__file__).parent / f'../static/models/anim_{unique_id}.glb')
-        
-        # 3. 임시 작업 디렉토리 설정
-        temp_dir = Path(output_path).parent / f"temp_{uuid.uuid4().hex[:8]}"
-        os.makedirs(temp_dir, exist_ok=True)
-        
-        # 4. 원본 스킨 모델 파일을 복사 (기존 구조 보존)
-        temp_model = temp_dir / "skin_model.glb"
-        shutil.copy2(skin_model_path, temp_model)
-        
-        # 5. 원본 스킨 모델 로드
-        gltf = pygltflib.GLTF2().load(str(temp_model))
-        print(f"스킨 모델 로드 완료: {len(gltf.nodes)}개 노드")
-        
-        # 6. 본 매핑 설정
-        bone_name_to_idx = {}
-        for i, node in enumerate(gltf.nodes):
-            if hasattr(node, 'name') and node.name:
-                bone_name_to_idx[node.name] = i
-        
-        bone_idx_mapping = {}
-        for i, name in enumerate(bone_names):
-            if i < len(bone_names) and name in bone_name_to_idx:
-                bone_idx_mapping[i] = bone_name_to_idx[name]
-        
-        print(f"매핑된 본: {len(bone_idx_mapping)}개")
-        if len(bone_idx_mapping) == 0:
-            print("경고: 매핑된 본이 없습니다. 스킨 모델과 본 이름이 일치하지 않을 수 있습니다.")
-            # 본 이름 목록 표시
-            print("스킨 모델의 본 이름:")
-            for i, node in enumerate(gltf.nodes):
-                if hasattr(node, 'name') and node.name:
-                    print(f"  {i}: {node.name}")
-        
-        # 7. 절대 위치를 상대 위치로 변환
-        local_anim_data = global_to_local_positions(anim_data, hierarchy)
-        
-        # 8. 프레임 수와 본 수 확인
-        num_frames = local_anim_data.shape[0]
-        num_joints = min(local_anim_data.shape[1], 22)
-        print(f"프레임 수: {num_frames}, 본 수: {num_joints}")
-        
-        # 9. 시간 데이터 생성
-        times = np.arange(num_frames, dtype=np.float32) / fps
-        
-        # 10. 애니메이션 객체 생성 (기존 애니메이션 대체)
-        if not hasattr(gltf, 'animations') or not gltf.animations:
-            gltf.animations = []
-        else:
-            # 기존 애니메이션 정보 확인 (디버깅)
-            print(f"기존 애니메이션 정보: {len(gltf.animations)}개 애니메이션")
-        
-        # 기존 애니메이션 제거
-        gltf.animations = []
-        
-        # 새 애니메이션 객체 생성
-        animation = pygltflib.Animation(
-            name="MDMAnimation",
-            channels=[],
-            samplers=[],
-            extensions={},
-            extras={"fps": fps}
-        )
-        
-        # 11. 애니메이션 바이너리 데이터 생성
-        # 바이너리 블롭 초기화 (기존 바이너리 데이터 유지)
-        binary_blob = bytearray()
-        
-        # 12. 타임라인 데이터 추가
-        time_bytes = times.tobytes()
-        time_offset = len(binary_blob)
-        binary_blob.extend(time_bytes)
-        
-        # 13. BufferView 및 Accessor 초기화
-        # 기존 bufferViews와 accessors 백업 (기존 모델 데이터 유지를 위함)
-        original_buffer_views = gltf.bufferViews.copy() if hasattr(gltf, 'bufferViews') else []
-        original_accessors = gltf.accessors.copy() if hasattr(gltf, 'accessors') else []
-        
-        # 애니메이션용 새 버퍼뷰 및 액세서 컬렉션
-        new_buffer_views = []
-        new_accessors = []
-        
-        # 시간 버퍼뷰 및 액세서 생성
-        time_buffer_view = pygltflib.BufferView(
-            buffer=0,
-            byteOffset=time_offset,
-            byteLength=len(time_bytes),
-            extensions={},
-            extras={}
-        )
-        new_buffer_views.append(time_buffer_view)
-        
-        time_accessor = pygltflib.Accessor(
-            bufferView=0,  # 새 버퍼뷰 인덱스
-            componentType=pygltflib.FLOAT,
-            count=num_frames,
-            type=pygltflib.SCALAR,
-            max=[float(times.max())],
-            min=[float(times.min())],
-            extensions={},
-            extras={}
-        )
-        new_accessors.append(time_accessor)
-        
-        # 14. 각 매핑된 본에 대한 애니메이션 채널 생성
-        processed_nodes = set()
-        
-        # 기본 본만 처리 (자식 본은 이후에 보간)
-        for joint_idx, node_idx in bone_idx_mapping.items():
-            if joint_idx >= num_joints:
-                continue
-            
-            # 위치 데이터 추출 (F, 3)
-            positions = local_anim_data[:, joint_idx, :].astype(np.float32)
-            
-            # 필요한 경우 위치 데이터 스케일 조정
-            # positions *= 0.01  # 스케일 조정이 필요한 경우
-            
-            # 위치 데이터를 바이너리에 추가
-            pos_bytes = positions.tobytes()
-            pos_offset = len(binary_blob)
-            binary_blob.extend(pos_bytes)
-            
-            # 위치 데이터용 버퍼뷰 생성
-            pos_buffer_view = pygltflib.BufferView(
-                buffer=0,
-                byteOffset=pos_offset,
-                byteLength=len(pos_bytes),
-                extensions={},
-                extras={}
-            )
-            new_buffer_views.append(pos_buffer_view)
-            pos_buffer_view_idx = len(new_buffer_views) - 1
-            
-            # 위치 데이터용 액세서 생성
-            pos_accessor = pygltflib.Accessor(
-                bufferView=pos_buffer_view_idx,
-                componentType=pygltflib.FLOAT,
-                count=num_frames,
-                type=pygltflib.VEC3,
-                max=np.max(positions, axis=0).tolist(),
-                min=np.min(positions, axis=0).tolist(),
-                extensions={},
-                extras={}
-            )
-            new_accessors.append(pos_accessor)
-            pos_accessor_idx = len(new_accessors) - 1
-            
-            # 애니메이션 샘플러 생성
-            sampler = pygltflib.AnimationSampler(
-                input=0,  # 시간 액세서 인덱스
-                output=pos_accessor_idx,
-                interpolation="LINEAR",
-                extensions={},
-                extras={}
-            )
-            animation.samplers.append(sampler)
-            sampler_idx = len(animation.samplers) - 1
-            
-            # 애니메이션 채널 생성
-            channel = pygltflib.AnimationChannel(
-                sampler=sampler_idx,
-                target=pygltflib.AnimationChannelTarget(
-                    node=node_idx,
-                    path="translation",
-                    extensions={},
-                    extras={}
-                ),
-                extensions={},
-                extras={}
-            )
-            animation.channels.append(channel)
-            processed_nodes.add(node_idx)
-            
-        # 15. 애니메이션 추가
-        gltf.animations.append(animation)
-        
-        # 16. 버퍼뷰 및 액세서 설정
-        # 두 가지 방법 중 하나 선택:
-        
-        # 방법 1: 기존 데이터를 유지하고 애니메이션 데이터만 추가
-        # gltf.bufferViews = original_buffer_views + new_buffer_views
-        # gltf.accessors = original_accessors + new_accessors
-        
-        # 방법 2: 애니메이션 데이터만 사용 (스킨 메시 정보 손실 가능성)
-        gltf.bufferViews = new_buffer_views
-        gltf.accessors = new_accessors
-        
-        # 17. 버퍼 설정
-        buffer = pygltflib.Buffer(
-            byteLength=len(binary_blob),
-            extensions={},
-            extras={}
-        )
-        gltf.buffers = [buffer]
-        
-        # 18. Extensions 필드 초기화
-        fix_extensions_extras(gltf)
-        
-        # 19. 바이너리 데이터 설정
-        gltf.set_binary_blob(bytes(binary_blob))
-        
-        # 20. 파일 저장
-        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-        gltf.save(output_path)
-        
-        # 21. 보안 조치: 대체 방법으로 모델을 생성
-        # 애니메이션만 추출하여 별도 파일로 저장
-        anim_only_path = str(temp_dir / "animation_only.glb")
-        
-        # 깨끗한 상태에서 시작
-        clean_gltf = pygltflib.GLTF2()
-        clean_gltf.scene = gltf.scene
-        clean_gltf.scenes = gltf.scenes
-        clean_gltf.nodes = gltf.nodes
-        clean_gltf.animations = gltf.animations
-        clean_gltf.buffers = gltf.buffers
-        clean_gltf.bufferViews = gltf.bufferViews
-        clean_gltf.accessors = gltf.accessors
-        
-        # 새로운 GLB 파일로 저장 (애니메이션 정보만 포함)
-        clean_gltf.set_binary_blob(bytes(binary_blob))
-        clean_gltf.save(anim_only_path)
-        
-        # 임시 디렉토리 정리
-        try:
-            shutil.rmtree(temp_dir)
-        except:
-            pass
-        
-        print(f"===== 스킨 모델에 애니메이션 적용 완료 =====")
-        print(f"저장 경로: {output_path}")
-        print(f"애니메이션: {len(animation.channels)}개 채널, {num_frames}프레임, {fps}fps")
-        
-        return output_path
-        
-    except Exception as e:
-        print(f"스킨 모델에 애니메이션 적용 중 오류 발생: {str(e)}")
-        traceback.print_exc()
-        return None
-
-

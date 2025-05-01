@@ -371,7 +371,6 @@ def create_dataset_create_tab(models_dir):
     def get_glb_info(file_path):
         import pygltflib
         from struct import unpack
-        from model.smpl import smpl_humanml3d_to_mixamo_index  # SMPL 본 이름 리스트
 
         try:
             gltf = pygltflib.GLTF2().load(file_path)
@@ -695,7 +694,8 @@ def create_dataset_create_tab(models_dir):
                 # 고정된 tpose.glb를 스킨으로 사용
                 VIEWER_PATH = Path(__file__).parent.parent / "static" / "viewer.html"
                 MODELS_DIR = Path(__file__).parent.parent / "static" / "models"
-                dummy_path = MODELS_DIR / "tpose.glb"
+                STATIC_DIR = Path(__file__).parent.parent / "static"
+                dummy_path = STATIC_DIR / "tpose.glb"
                 
                 print(f"더미 경로: {dummy_path}")
                 print(f"파일 경로: {file_path}")
