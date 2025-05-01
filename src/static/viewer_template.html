@@ -823,13 +823,14 @@
                                                         console.log('본 인덱스 보기/숨기기:', boneLabelsVisible ? '보임' : '숨김');
                                                         
                                                         // 모든 본 라벨의 가시성 토글
-                                                        jointLabels.forEach(label => {
-                                                            if (label) { // null이 아닌 경우에만
-                                                                label.visible = boneLabelsVisible;
-                                                            }
-                                                        });
+                                                        // jointLabels.forEach(label => {
+                                                        //     if (label) { // null이 아닌 경우에만
+                                                        //         label.visible = boneLabelsVisible;
+                                                        //     }
+                                                        // });
                                                         jointMeshes.forEach(mesh => {
                                                             mesh.visible = boneLabelsVisible;
+                                                            mesh.material.opacity = 0.5; // 반투명 처리
                                                         });
                                                         
                                                         // 버튼 텍스트 업데이트

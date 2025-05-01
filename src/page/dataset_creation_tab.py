@@ -685,7 +685,6 @@ def create_dataset_create_tab(models_dir):
             viewer_html = ""
             
             if file_ext == '.glb':
-                # animation_tab.py의 process_animation와 유사하게 구현
                 from util.file_utils import apply_animation  # 필요한 함수 import
 
                 # 파일 경로를 name 속성이 있는 객체로 변환
@@ -700,7 +699,6 @@ def create_dataset_create_tab(models_dir):
                 print(f"더미 경로: {dummy_path}")
                 print(f"파일 경로: {file_path}")
                 
-                # apply_animation 호출하여 모델 표시
                 if os.path.exists(dummy_path):
                         dummy_obj = FilePathWrapper(str(dummy_path))
                         viewer_html = apply_animation(dummy_obj, file_obj, VIEWER_PATH, MODELS_DIR)

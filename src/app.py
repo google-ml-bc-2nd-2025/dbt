@@ -12,7 +12,7 @@ from util.viewer_template import create_viewer_html
 # 탭 모듈 임포트
 from page.animation_generation_tab import create_animation_generation_tab
 from page.animation_viewer_tab import create_animation_viewer_tab
-from page.dataset_create_tab import create_dataset_create_tab  # 새로운 탭 모듈 임포트
+from page.dataset_creation_tab import create_dataset_create_tab  # 새로운 탭 모듈 임포트
 
 # 정적 파일 디렉토리 생성
 STATIC_DIR = Path(__file__).parent / "static"
