@@ -102,8 +102,8 @@ def render_humanml3d(anim_file):
     
     temp_file = MockFile(str(temp_npy_path))
     
-    # viewer_template.html 파일 경로
-    VIEWER_PATH = Path(__file__).parent.parent / "static" / "viewer_template.html"
+    # viewer.html 파일 경로
+    TEMPLATE_PATH = Path(__file__).parent.parent / "static" / "viewer.html"
     
     # GLB 방식과 동일하게 save_model 사용하여 anim_url 생성
     anim_url = save_model(temp_file, "anim", MODELS_DIR)
@@ -122,9 +122,9 @@ def render_humanml3d(anim_file):
     
     threading.Thread(target=cleanup_temp_file, daemon=True).start()
     
-    # iframe으로 viewer_template.html 호출 (스킨 모델 없이 직접 호출)
+    # iframe으로 viewer.html 호출 (스킨 모델 없이 직접 호출)
     # animType=humanml3d 파라미터를 전달하여 HumanML3D 로더가 호출되도록 함
-    viewer_url = f"/file={VIEWER_PATH}?anim={anim_url}&animType=humanml3d"
+    viewer_url = f"/file={TEMPLATE_PATH}?anim={anim_url}&animType=humanml3d"
     print(f"[render_humanml3d] viewer URL: {viewer_url}")
     
     return f'''

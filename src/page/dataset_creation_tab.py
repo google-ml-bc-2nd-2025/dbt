@@ -691,7 +691,7 @@ def create_dataset_create_tab(models_dir):
                 file_obj = FilePathWrapper(file_path)
                 
                 # 고정된 tpose.glb를 스킨으로 사용
-                VIEWER_PATH = Path(__file__).parent.parent / "static" / "viewer.html"
+                TEMPLATE_PATH = Path(__file__).parent.parent / "static" / "viewer.html"
                 MODELS_DIR = Path(__file__).parent.parent / "static" / "models"
                 STATIC_DIR = Path(__file__).parent.parent / "static"
                 dummy_path = STATIC_DIR / "tpose.glb"
@@ -701,7 +701,7 @@ def create_dataset_create_tab(models_dir):
                 
                 if os.path.exists(dummy_path):
                         dummy_obj = FilePathWrapper(str(dummy_path))
-                        viewer_html = apply_animation(dummy_obj, file_obj, VIEWER_PATH, MODELS_DIR)
+                        viewer_html = apply_animation(dummy_obj, file_obj, TEMPLATE_PATH, MODELS_DIR)
                 else:
                     viewer_html = f"""
                     <div style="width: 100%; height: 300px; background-color: #333; border-radius: 8px; 

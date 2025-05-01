@@ -10,7 +10,7 @@ from util.file_utils import apply_animation
 from render.request_to_server import send_prompt
 from render.smpl_animation import apply_to_glb
 
-def create_animation_generation_tab(VIEWER_PATH, MODELS_DIR):
+def create_animation_generation_tab(TEMPLATE_PATH, MODELS_DIR):
     """애니메이션 생성 탭 인터페이스 생성"""
     with gr.Column():
         gr.Markdown("# 애니메이션 생성")
@@ -92,7 +92,7 @@ def create_animation_generation_tab(VIEWER_PATH, MODELS_DIR):
                         from types import SimpleNamespace
                         anim_glb = SimpleNamespace()
                         anim_glb.name = output_path
-                        return apply_animation(skin, anim_glb, VIEWER_PATH, MODELS_DIR, file_ext)
+                        return apply_animation(skin, anim_glb, TEMPLATE_PATH, MODELS_DIR, file_ext)
                     else:
                         return "애니메이션 적용 실패"
                         
@@ -104,7 +104,7 @@ def create_animation_generation_tab(VIEWER_PATH, MODELS_DIR):
             # 기존 GLB/BVH 파일 처리
             print(f"skin = {skin}")
             print(f"anim = {anim}")
-            return apply_animation(skin, anim, VIEWER_PATH, MODELS_DIR)
+            return apply_animation(skin, anim, TEMPLATE_PATH, MODELS_DIR)
         
         # 프롬프트 전송 버튼 클릭 이벤트
         prompt_btn.click(

@@ -1199,7 +1199,7 @@ def apply_to_glb(skin_model, anim_data, viewer_path, models_dir, return_type='ht
             duration = frame_count / fps if fps > 0 else 0
             print(f"GLB URL: {glb_url}")
             
-            # 고정 템플릿 사용 (viewer_template.html 파일을 직접 참조)
+            # 고정 템플릿 사용 (viewer.html 파일을 직접 참조)
             viewer_url = f"{viewer_path}?model={glb_url}&duration={duration}&fps={fps}&frames={frame_count}"
             print(f"뷰어 URL: {viewer_url}")
             return None            

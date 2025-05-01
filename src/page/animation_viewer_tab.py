@@ -8,7 +8,7 @@ from util.file_utils import apply_animation
 from render.humanml3d_renderer import render_humanml3d
 from pathlib import Path
 
-def create_animation_viewer_tab(VIEWER_PATH, MODELS_DIR):
+def create_animation_viewer_tab(TEMPLATE_PATH, MODELS_DIR):
     """애니메이션 뷰어 탭 인터페이스 생성"""
     with gr.Column():
         gr.Markdown("# 애니메이션 뷰어")
@@ -89,7 +89,7 @@ def create_animation_viewer_tab(VIEWER_PATH, MODELS_DIR):
 
             # glb의 경우 skin, anim 모두 지정 필요.
             # 기존 glb에 skin, anim 모두 있다면 별도 처리 (추후 구현 필요)
-            return apply_animation(skin, anim, VIEWER_PATH, MODELS_DIR, file_ext)
+            return apply_animation(skin, anim, TEMPLATE_PATH, MODELS_DIR, file_ext)
         
         # 버튼 클릭 이벤트 함수 등록
         apply_btn.click(

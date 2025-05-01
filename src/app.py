@@ -21,12 +21,7 @@ MODELS_DIR = STATIC_DIR / "models"
 MODELS_DIR.mkdir(exist_ok=True)
 
 # 뷰어 템플릿 HTML 파일 경로
-TEMPLATE_PATH = STATIC_DIR / "viewer_template.html"
-
-# HTML 뷰어 파일 생성
-VIEWER_PATH = STATIC_DIR / "viewer.html"
-create_viewer_html(VIEWER_PATH)
-
+TEMPLATE_PATH = STATIC_DIR / "viewer.html"
 
 
 # 서버 종료 관리 추가
@@ -46,10 +41,10 @@ with gr.Blocks(title="Animation Tool") as demo:
     # 탭 인터페이스 생성
     with gr.Tabs():
         with gr.TabItem("애니메이션 뷰어"):
-            create_animation_viewer_tab(VIEWER_PATH, MODELS_DIR)
+            create_animation_viewer_tab(TEMPLATE_PATH, MODELS_DIR)
 
         with gr.TabItem("애니메이션 생성"):
-            create_animation_generation_tab(VIEWER_PATH, MODELS_DIR)
+            create_animation_generation_tab(TEMPLATE_PATH, MODELS_DIR)
             
         with gr.TabItem("애니메이션 학습 데이터셋 생성"):
             create_dataset_create_tab(MODELS_DIR)
