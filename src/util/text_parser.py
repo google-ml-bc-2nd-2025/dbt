@@ -58,9 +58,3 @@ def decode_tagged(encoded_sentence):
     
     print(f"{encoded_sentence} -> 디코딩된 토큰: {tokens}")
     return ''.join(tokens)
-    # words = []
-    # for tok in tokens:
-    #     if "/" in tok:
-    #         word, _pos = tok.rsplit("/", 1)
-    #         words.append(word)
-    # return " ".join(words)

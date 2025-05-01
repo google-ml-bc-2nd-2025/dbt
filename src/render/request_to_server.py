@@ -3,6 +3,11 @@ import tempfile
 from render.humanml3d_renderer import render_humanml3d
 import requests
 import gradio as gr
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+GEN_ENDPOINT = os.getenv('GEN_ENDPOINT', 'http://localhost:8000/predict')
 
 def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
     """
@@ -20,7 +25,7 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
         # 프롬프트 전송
         progress(0, desc="프롬프트 전송 중...")
         response = requests.post(
-            'http://69.176.92.107:30748/predict',
+            GEN_ENDPOINT,
             headers={'Content-Type': 'application/json'},
             json={
                 'prompt': prompt_text,
@@ -36,10 +41,6 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
                 for key in json_file.keys():
                     print(f"Key: {key}")
 
-                # with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as json_tmp_file:
-                #     json.dump(json_file, json_tmp_file, ensure_ascii=False, indent=4)
-                #     json_tmp_path = json_tmp_file.name
-                #     print(f"JSON 데이터를 임시 파일에 저장: {json_tmp_path}")
             except Exception as e:
                 print(f"JSON 파일 저장 오류: {str(e)}")
                 raise ValueError(str(e))

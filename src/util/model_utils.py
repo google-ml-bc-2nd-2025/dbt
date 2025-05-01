@@ -6,14 +6,16 @@ from pathlib import Path
 def save_model(file_obj, prefix, models_dir):
     """
     모델 파일을 저장하고 URL을 반환합니다.
+    Saves the model file and returns its URL.
     
     Args:
-        file_obj: 업로드된 파일 객체
-        prefix: 파일 접두어 (예: "skin", "anim")
-        models_dir: 모델이 저장될 디렉토리 경로
+        file_obj: 업로드된 파일 객체. Uploaded file object
+        prefix: 파일 접두어 (예: "skin", "anim")  File prefix (e.g., "skin", "anim")
+        models_dir: 모델이 저장될 디렉토리 경로. Directory path where the model will be saved
     
     Returns:
         저장된 파일의 URL 경로
+        URL path of the saved file
     """
     if file_obj is None:
         return None
