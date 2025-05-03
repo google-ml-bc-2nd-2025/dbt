@@ -13,6 +13,12 @@ from util.viewer_template import create_viewer_html
 from page.animation_generation_tab import create_animation_generation_tab
 from page.animation_viewer_tab import create_animation_viewer_tab
 from page.dataset_creation_tab import create_dataset_create_tab  # 새로운 탭 모듈 임포트
+from util.i18n import translations  # 다국어 지원 모듈 임포트
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+LANG_CODE = os.getenv("LANGUAGE", "en")  # 환경변수에서 언어 설정을 가져옵니다.
 
 # 정적 파일 디렉토리 생성
 STATIC_DIR = Path(__file__).parent / "static"
@@ -35,19 +41,19 @@ def cleanup():
 atexit.register(cleanup)
 
 # Gradio 인터페이스 생성
-with gr.Blocks(title="Animation Tool") as demo:
-    gr.Markdown("# Animation Tool")
+with gr.Blocks(title="Dataset Building Tool for MDM") as demo:
+    gr.Markdown("# Dataset Building Tool for MDM")
     
     # 탭 인터페이스 생성
     with gr.Tabs():
-        with gr.TabItem("애니메이션 뷰어"):
-            create_animation_viewer_tab(TEMPLATE_PATH, MODELS_DIR)
+        with gr.TabItem(translations[LANG_CODE]["tab_title_01"]):
+            create_animation_generation_tab(LANG_CODE, TEMPLATE_PATH, MODELS_DIR)
 
-        with gr.TabItem("애니메이션 생성"):
-            create_animation_generation_tab(TEMPLATE_PATH, MODELS_DIR)
+        with gr.TabItem(translations[LANG_CODE]["tab_title_02"]):
+            create_animation_viewer_tab(LANG_CODE, TEMPLATE_PATH, MODELS_DIR)
             
-        with gr.TabItem("애니메이션 학습 데이터셋 생성"):
-            create_dataset_create_tab(MODELS_DIR)
+        with gr.TabItem(translations[LANG_CODE]["tab_title_03"]):
+            create_dataset_create_tab(LANG_CODE, MODELS_DIR)
 
 # 웹 서버 실행
 if __name__ == "__main__":

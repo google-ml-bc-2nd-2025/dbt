@@ -7,12 +7,13 @@ from pathlib import Path
 from util.file_utils import apply_animation
 from render.humanml3d_renderer import render_humanml3d
 from pathlib import Path
+from util.i18n import translations  # 다국어 지원 모듈 임포트
 
-def create_animation_viewer_tab(TEMPLATE_PATH, MODELS_DIR):
+def create_animation_viewer_tab(LANG_CODE, TEMPLATE_PATH, MODELS_DIR):
     """애니메이션 뷰어 탭 인터페이스 생성"""
     with gr.Column():
-        gr.Markdown("# 애니메이션 뷰어")
-        gr.Markdown("스킨이 있는 모델을 지정 후 원하는 애니메이션 데이터를 선택하세요.")
+        gr.Markdown(f"# {translations[LANG_CODE]['tab_title_02']}")
+        gr.Markdown(f"# {translations[LANG_CODE]['tab_title_02_desc']}")
         
         with gr.Row():
             with gr.Column(scale=1):
@@ -59,11 +60,11 @@ def create_animation_viewer_tab(TEMPLATE_PATH, MODELS_DIR):
                 
             with gr.Column(scale=2):
                 # 3D 모델 뷰어
-                viewer = gr.HTML("""
+                viewer = gr.HTML(f"""
                 <div style="width: 100%; height: 500px; background-color: #333; border-radius: 8px; 
                          display: flex; justify-content: center; align-items: center; color: #ccc;">
                     <div style="text-align: center;">
-                        <h3>모델이 표시될 영역</h3>
+                        <h3>{translations[LANG_CODE]['viewport_title']}</h3>
                         <p>모델을 업로드하고 '적용 및 보기' 버튼을 클릭하세요</p>
                     </div>
                 </div>

@@ -9,21 +9,25 @@ from pathlib import Path
 from util.file_utils import apply_animation
 from render.request_to_server import send_prompt
 from render.smpl_animation import apply_to_glb
+from util.i18n import translations  # 다국어 지원 모듈 임포트
+from datetime import datetime
 
-def create_animation_generation_tab(TEMPLATE_PATH, MODELS_DIR):
+last_generated_file = None  # prompt_result를 저장할 전역 변수
+
+def create_animation_generation_tab(LANG_CODE, TEMPLATE_PATH, MODELS_DIR):
     """애니메이션 생성 탭 인터페이스 생성"""
     with gr.Column():
-        gr.Markdown("# 애니메이션 생성")
-        gr.Markdown("원하는 애니메이션을 프롬프트에 입력 후 전송 버튼을 누르세요.")
+        gr.Markdown(f"# {translations[LANG_CODE]['tab_title_01']}")
+        gr.Markdown(f"# {translations[LANG_CODE]['tab_title_01_desc']}")
         
 
         with gr.Column():
             # 3D 모델 뷰어
-            viewer = gr.HTML("""
+            viewer = gr.HTML(f"""
             <div style="width: 100%; height: 500px; background-color: #333; border-radius: 8px; 
                         display: flex; justify-content: center; align-items: center; color: #ccc;">
                 <div style="text-align: center;">
-                    <h3>모델이 표시될 영역</h3>
+                    <h3>{translations[LANG_CODE]['viewport_title']}</h3>
                     <p>모델을 업로드하고 '적용 및 보기' 버튼을 클릭하세요</p>
                 </div>
             </div>
@@ -40,6 +44,7 @@ def create_animation_generation_tab(TEMPLATE_PATH, MODELS_DIR):
                 
                 with gr.Column(scale=1, min_width=120):
                     prompt_btn = gr.Button("전송", variant="secondary")
+                    download_btn = gr.Button("다운로드", variant="secondary")
             
             # 프롬프트 결과 출력 영역
             prompt_result = viewer
@@ -112,3 +117,18 @@ def create_animation_generation_tab(TEMPLATE_PATH, MODELS_DIR):
             inputs=prompt_input,
             outputs=prompt_result
         )
+
+        download_btn.click(
+            fn=download_generated_motion,
+            inputs=[],
+            outputs=viewer
+        )
+
+    # 테스트 필요!!
+    def download_generated_motion(): 
+        global last_generated_file
+
+        if last_generated_file and os.path.exists(last_generated_file):
+            return last_generated_file
+        else:
+            return "생성된 파일이 없습니다."

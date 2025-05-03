@@ -13,6 +13,7 @@ from datetime import datetime
 import torch
 from util import text_parser
 from model.smpl import smpl_humanml3d_to_mixamo_index
+from util.i18n import translations  # 다국어 지원 모듈 임포트
 
 # 파일 경로를 파일 객체처럼 처리하기 위한 클래스 추가
 class FilePathWrapper:
@@ -20,13 +21,17 @@ class FilePathWrapper:
         self.name = path
         self.path = path
 
-def create_dataset_create_tab(models_dir):
+def create_dataset_create_tab(LANG_CODE, models_dir):
     """
     학습 데이터 생성 탭 UI를 생성합니다.
     
     Args:
         models_dir: glb,fbx 파일이 저장된 디렉토리 경로
     """
+    with gr.Column():
+        gr.Markdown(f"# {translations[LANG_CODE]['tab_title_03']}")
+        gr.Markdown(f"# {translations[LANG_CODE]['tab_title_03_desc']}")
+
     # 데이터셋 디렉토리 경로 설정
     dataset_dir = Path(models_dir).parent.parent / "dataset"
     dataset_dir.mkdir(exist_ok=True)
@@ -597,11 +602,11 @@ def create_dataset_create_tab(models_dir):
             refresh_btn = gr.Button("새로고침")
         with gr.Column(2):
             # 3D 모델 뷰어
-            viewer = gr.HTML("""
+            viewer = gr.HTML(f"""
             <div style="width: 100%; height: 500px; background-color: #333; border-radius: 8px; 
                         display: flex; justify-content: center; align-items: center; color: #ccc;">
                 <div style="text-align: center;">
-                    <h3>모델이 표시될 영역</h3>
+                    <h3>{translations[LANG_CODE]['viewport_title']}</h3>
                     <p>모션을 선택하세요.</p>
                 </div>
             </div>
@@ -610,7 +615,7 @@ def create_dataset_create_tab(models_dir):
     # 설명 텍스트 편집 영역
     with gr.Row():
         new_description = gr.Textbox(
-            label="새 설명 텍스트(한 줄 마다 애니메이션 구간에 대한 설명과 시간을 입력. 예) 앞으로 걸어가다 #0.0#0.5(줄바꿈)뒤로 돌아간다. #0.5#1.2)",
+            label="모션 라벨(한 줄 마다 애니메이션 구간에 대한 설명과 시간을 입력. 예) 앞으로 걸어가다 #0.0#0.5(줄바꿈)뒤로 돌아간다. #0.5#1.2)",
             placeholder="애니메이션에 대한 설명을 입력하세요...",
             lines=3,
             interactive=True

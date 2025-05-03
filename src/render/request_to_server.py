@@ -1,15 +1,11 @@
+import os, tempfile
 import numpy as np
-import tempfile
 from render.humanml3d_renderer import render_humanml3d
 import requests
 import gradio as gr
-from dotenv import load_dotenv
-import os
 
-load_dotenv()
 GEN_ENDPOINT = os.getenv('GEN_ENDPOINT', 'http://localhost:8000/predict')
-
-def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
+def send_prompt(GEN_ENDPOINT, prompt_text, progress=gr.Progress(track_tqdm=True)):
     """
     프롬프트를 전송하고 결과를 처리하는 함수
     
@@ -21,6 +17,8 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
     if not prompt_text.strip():
         return "프롬프트를 입력해주세요."
     
+    global last_generated_file  # 생성된 파일 경로를 전역 변수로 저장
+    last_generated_file = None  # 초기화    
     try:
         # 프롬프트 전송
         progress(0, desc="프롬프트 전송 중...")
@@ -86,6 +84,9 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
                     # 변환된 pose 데이터를 numpy 파일로 저장
                     np.save(tmp_path, pose_data)
                     print(f"애니메이션 데이터를 임시 파일에 저장: {tmp_path}")
+
+                    # 전역 변수에 저장
+                    last_generated_file = tmp_path
 
                     # 임시 파일을 이용하여 애니메이션 처리
                     try:
