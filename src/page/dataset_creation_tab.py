@@ -30,7 +30,7 @@ def create_dataset_create_tab(LANG_CODE, models_dir):
     """
     with gr.Column():
         gr.Markdown(f"# {translations[LANG_CODE]['tab_title_03']}")
-        gr.Markdown(f"# {translations[LANG_CODE]['tab_title_03_desc']}")
+        gr.Markdown(f"  {translations[LANG_CODE]['tab_title_03_desc']}")
 
     # 데이터셋 디렉토리 경로 설정
     dataset_dir = Path(models_dir).parent.parent / "dataset"
@@ -53,11 +53,9 @@ def create_dataset_create_tab(LANG_CODE, models_dir):
         try:
             data = np.load(file_path, allow_pickle=True)
             text = data.get('text')
-            print(f"NPZ 파일에서 텍스트 데이터 로드: {text}")
-            text_str = text_parser.decode_tagged(text[0]) if isinstance(text, np.ndarray) and text.size > 0 else "설명 없음"
-            print(f"NPZ 파일에서 텍스트 데이터: {text_str}")
+            text_str = text_parser.decode_tagged(text[0]) if isinstance(text, np.ndarray) and text.size > 0 else "No description"
             # 포즈 데이터 형태 확인
-            pose_shape = str(data.get('pose').shape) if 'pose' in data else "데이터 없음"
+            pose_shape = str(data.get('pose').shape) if 'pose' in data else "No pose data"
             
             # 파일명에서 애니메이션 이름 추출
             filename = os.path.basename(file_path)
@@ -74,8 +72,8 @@ def create_dataset_create_tab(LANG_CODE, models_dir):
             return {
                 "path": file_path,
                 "name": os.path.basename(file_path),
-                "text": f"오류: {str(e)}",
-                "shape": "오류"
+                "text": f"Error: {str(e)}",
+                "shape": "Error"
             }
 
     # GLB/FBX 파일 정보 추출 함수 수정
@@ -100,14 +98,12 @@ def create_dataset_create_tab(LANG_CODE, models_dir):
                 try:
                     # 현재 시간 기반으로 캐시 무효화를 위해 파일 수정 시간 확인
                     last_modified = os.path.getmtime(txt_file_path)
-                    print(f"텍스트 파일 마지막 수정 시간: {last_modified}")
                     
                     # 파일을 매번 새로 읽음
                     with open(txt_file_path, 'r', encoding='utf-8') as f:
                         description_text = f.read().strip()
-                    print(f"텍스트 파일에서 설명을 로드했습니다: {txt_file_path}, 내용: {description_text}")
                 except Exception as e:
-                    print(f"텍스트 파일 읽기 오류: {e}")
+                    print(f"Error: {e}")
             
             # 텍스트 파일이 없거나 비어있으면 파일명에서 설명 생성
             if not description_text:
@@ -595,11 +591,11 @@ def create_dataset_create_tab(LANG_CODE, models_dir):
     with gr.Row(2):
         with gr.Column():
             dataset_dir_input = gr.Textbox(
-                label="데이터셋 디렉토리 경로",
+                label=translations[LANG_CODE]['label_dataset_path'],
                 value=str(dataset_dir),
                 interactive=True
             )
-            refresh_btn = gr.Button("새로고침")
+            refresh_btn = gr.Button(translations[LANG_CODE]['btn_refresh'])
         with gr.Column(2):
             # 3D 모델 뷰어
             viewer = gr.HTML(f"""
@@ -607,7 +603,7 @@ def create_dataset_create_tab(LANG_CODE, models_dir):
                         display: flex; justify-content: center; align-items: center; color: #ccc;">
                 <div style="text-align: center;">
                     <h3>{translations[LANG_CODE]['viewport_title']}</h3>
-                    <p>모션을 선택하세요.</p>
+                    <p>{translations[LANG_CODE]['desc_select_motion']}</p>
                 </div>
             </div>
             """)
@@ -615,40 +611,32 @@ def create_dataset_create_tab(LANG_CODE, models_dir):
     # 설명 텍스트 편집 영역
     with gr.Row():
         new_description = gr.Textbox(
-            label="모션 라벨(한 줄 마다 애니메이션 구간에 대한 설명과 시간을 입력. 예) 앞으로 걸어가다 #0.0#0.5(줄바꿈)뒤로 돌아간다. #0.5#1.2)",
-            placeholder="애니메이션에 대한 설명을 입력하세요...",
+            label=translations[LANG_CODE]['desc_dataset_input'],
+            placeholder=translations[LANG_CODE]["desc_dataset_input_desc"],
             lines=3,
             interactive=True
         )
     with gr.Row():
-        update_btn = gr.Button("설명 업데이트", variant="primary")
-        gen_npz_btn = gr.Button("학습 파일 생성", variant="secondary")
-        gen_unified_btn = gr.Button("학습 파일 통합 생성", variant="secondary")
+        update_btn = gr.Button(translations[LANG_CODE]["btn_update"], variant="primary")
+        gen_npz_btn = gr.Button(translations[LANG_CODE]["btn_build_dataset"], variant="secondary")
+        gen_unified_btn = gr.Button(translations[LANG_CODE]["btn_build_dataset_all"], variant="secondary")
 
     # 데이터셋 목록 테이블
     dataset_table = gr.Dataframe(
-        headers=["애니메이션 이름", "설명 텍스트", "데이터 크기", "파일 경로"],
+        headers=["Name", "Label", "Detail", "Path"],
         datatype=["str", "str", "str", "str"],
-        label="학습 데이터셋 목록",
+        label=translations[LANG_CODE]["label_file_list"],
         value=update_dataset_list(str(dataset_dir)),
         interactive=False
     )
     
     # 선택된 항목 정보 표시
     with gr.Row():
-        selected_file = gr.Textbox(label="선택된 파일 경로", interactive=False)
-        selected_name = gr.Textbox(label="애니메이션 이름", interactive=False)
+        selected_file = gr.Textbox(label="Selected file path", interactive=False)
+        selected_name = gr.Textbox(label="Motion name", interactive=False)
         
-    # 계속 반복 여부 확인을 위한 체크박스 추가
-    with gr.Row():
-        continue_checkbox = gr.Checkbox(
-            label="계속 반복하시겠습니까?",
-            value=False,
-            interactive=True
-        )
     
-    
-    result_message = gr.Textbox(label="결과", interactive=False)
+    result_message = gr.Textbox(label="Result", interactive=False)
     
     # 이벤트 연결
     refresh_btn.click(
@@ -701,9 +689,6 @@ def create_dataset_create_tab(LANG_CODE, models_dir):
                 STATIC_DIR = Path(__file__).parent.parent / "static"
                 dummy_path = STATIC_DIR / "tpose.glb"
                 
-                print(f"더미 경로: {dummy_path}")
-                print(f"파일 경로: {file_path}")
-                
                 if os.path.exists(dummy_path):
                         dummy_obj = FilePathWrapper(str(dummy_path))
                         viewer_html = apply_animation(dummy_obj, file_obj, TEMPLATE_PATH, MODELS_DIR)
@@ -755,14 +740,14 @@ def create_dataset_create_tab(LANG_CODE, models_dir):
     # 버튼 클릭 이벤트 수정
     update_btn.click(
         update_and_refresh,
-        inputs=[selected_file, new_description, dataset_dir_input, continue_checkbox],
+        inputs=[selected_file, new_description, dataset_dir_input],
         outputs=[result_message, dataset_table]
     )
     
     # 학습 파일(NPZ) 생성 버튼
     gen_npz_btn.click(
         generate_and_refresh,
-        inputs=[selected_file, new_description, dataset_dir_input, continue_checkbox],
+        inputs=[selected_file, new_description, dataset_dir_input],
         outputs=[result_message, dataset_table]
     )
     

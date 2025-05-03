@@ -43,7 +43,7 @@ atexit.register(cleanup)
 # Gradio 인터페이스 생성
 with gr.Blocks(title="Dataset Building Tool for MDM") as demo:
     gr.Markdown("# Dataset Building Tool for MDM")
-    
+
     # 탭 인터페이스 생성
     with gr.Tabs():
         with gr.TabItem(translations[LANG_CODE]["tab_title_01"]):

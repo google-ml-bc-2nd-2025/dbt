@@ -14,11 +14,19 @@ from datetime import datetime
 
 last_generated_file = None  # prompt_result를 저장할 전역 변수
 
+def download_generated_motion(): 
+    global last_generated_file
+
+    if last_generated_file and os.path.exists(last_generated_file):
+        return last_generated_file
+    else:
+        return "No generated file available."
+
 def create_animation_generation_tab(LANG_CODE, TEMPLATE_PATH, MODELS_DIR):
     """애니메이션 생성 탭 인터페이스 생성"""
     with gr.Column():
         gr.Markdown(f"# {translations[LANG_CODE]['tab_title_01']}")
-        gr.Markdown(f"# {translations[LANG_CODE]['tab_title_01_desc']}")
+        gr.Markdown(f" {translations[LANG_CODE]['tab_title_01_desc']}")
         
 
         with gr.Column():
@@ -28,7 +36,7 @@ def create_animation_generation_tab(LANG_CODE, TEMPLATE_PATH, MODELS_DIR):
                         display: flex; justify-content: center; align-items: center; color: #ccc;">
                 <div style="text-align: center;">
                     <h3>{translations[LANG_CODE]['viewport_title']}</h3>
-                    <p>모델을 업로드하고 '적용 및 보기' 버튼을 클릭하세요</p>
+                    <p>{translations[LANG_CODE]['viewport_desc_gen']}</p>
                 </div>
             </div>
             """)
@@ -37,14 +45,14 @@ def create_animation_generation_tab(LANG_CODE, TEMPLATE_PATH, MODELS_DIR):
             with gr.Row(equal_height=False):
                 with gr.Column(scale=3):
                     prompt_input = gr.Textbox(
-                        label="프롬프트 입력",
-                        placeholder="캐릭터에 적용할 프롬프트를 입력하세요...",
+                        label=translations[LANG_CODE]['label_prompt'],
+                        placeholder=translations[LANG_CODE]['label_prompt_desc'],
                         lines=3
                     )
                 
                 with gr.Column(scale=1, min_width=120):
-                    prompt_btn = gr.Button("전송", variant="secondary")
-                    download_btn = gr.Button("다운로드", variant="secondary")
+                    prompt_btn = gr.Button(translations[LANG_CODE]['bnt_send'], variant="secondary")
+                    download_btn = gr.Button(translations[LANG_CODE]['btn_download'], variant="secondary")
             
             # 프롬프트 결과 출력 영역
             prompt_result = viewer
@@ -99,12 +107,12 @@ def create_animation_generation_tab(LANG_CODE, TEMPLATE_PATH, MODELS_DIR):
                         anim_glb.name = output_path
                         return apply_animation(skin, anim_glb, TEMPLATE_PATH, MODELS_DIR, file_ext)
                     else:
-                        return "애니메이션 적용 실패"
+                        return translations[LANG_CODE]['desc_failed_to_generate_motion']
                         
                 except Exception as e:
                     import traceback
                     traceback.print_exc()
-                    return f"SMPL 애니메이션 적용 오류: {str(e)}"
+                    return f"Error : {str(e)}"
             
             # 기존 GLB/BVH 파일 처리
             print(f"skin = {skin}")
@@ -123,12 +131,3 @@ def create_animation_generation_tab(LANG_CODE, TEMPLATE_PATH, MODELS_DIR):
             inputs=[],
             outputs=viewer
         )
-
-    # 테스트 필요!!
-    def download_generated_motion(): 
-        global last_generated_file
-
-        if last_generated_file and os.path.exists(last_generated_file):
-            return last_generated_file
-        else:
-            return "생성된 파일이 없습니다."

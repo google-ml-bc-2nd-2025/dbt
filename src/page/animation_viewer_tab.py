@@ -13,19 +13,19 @@ def create_animation_viewer_tab(LANG_CODE, TEMPLATE_PATH, MODELS_DIR):
     """애니메이션 뷰어 탭 인터페이스 생성"""
     with gr.Column():
         gr.Markdown(f"# {translations[LANG_CODE]['tab_title_02']}")
-        gr.Markdown(f"# {translations[LANG_CODE]['tab_title_02_desc']}")
+        gr.Markdown(f" {translations[LANG_CODE]['tab_title_02_desc']}")
         
         with gr.Row():
             with gr.Column(scale=1):
                 anim_model = gr.File(
-                    label="애니메이션 파일 (GLB/BVH/NPY)",
+                    label="Motion file (GLB/BVH/NPY)",
                     file_types=[".glb", ".bvh", ".npy"],
                     type="file"
                 )
 
                 # 파일 업로드 영역
                 skin_model = gr.File(
-                    label="스킨 모델 (GLB)",
+                    label="Skin Model (GLB)",
                     file_types=[".glb"],
                     type="file",
                     visible=False  # Initially hidden
@@ -45,18 +45,9 @@ def create_animation_viewer_tab(LANG_CODE, TEMPLATE_PATH, MODELS_DIR):
                     inputs=[anim_model],
                     outputs=[skin_model]
                 )
-                apply_btn = gr.Button("적용 및 보기", variant="primary")
+                apply_btn = gr.Button("Apply", variant="primary")
                 
-                gr.Markdown("""
-                ## 사용 방법
-                1. 애니메이션 파일(GLB, BVH, NPY(humanml3d format))을 업로드합니다.
-                2. glb 파일일 경우 별도의 스킨 모델을 업로드할 수 있습니다.
-                3. '적용 및 보기' 버튼을 클릭합니다.
-                4. 오른쪽 패널에서 애니메이션이 적용된 모델을 확인합니다.
-                
-                **참고**: 
-                - GLB 애니메이션: 두 모델의 리깅(뼈대) 구조가 동일해야 합니다. 즉시 확인 가능
-                """)
+                gr.Markdown(translations[LANG_CODE]['desc_viewer'])
                 
             with gr.Column(scale=2):
                 # 3D 모델 뷰어
@@ -65,7 +56,7 @@ def create_animation_viewer_tab(LANG_CODE, TEMPLATE_PATH, MODELS_DIR):
                          display: flex; justify-content: center; align-items: center; color: #ccc;">
                     <div style="text-align: center;">
                         <h3>{translations[LANG_CODE]['viewport_title']}</h3>
-                        <p>모델을 업로드하고 '적용 및 보기' 버튼을 클릭하세요</p>
+                        <p>{translations[LANG_CODE]['viewport_desc_viewer']}</p>
                     </div>
                 </div>
                 """)
