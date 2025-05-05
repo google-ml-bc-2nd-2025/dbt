@@ -4,8 +4,8 @@ from render.humanml3d_renderer import render_humanml3d
 import requests
 import gradio as gr
 
-GEN_ENDPOINT = os.getenv('GEN_ENDPOINT', 'http://localhost:8000/predict')
-def send_prompt(GEN_ENDPOINT, prompt_text, progress=gr.Progress(track_tqdm=True)):
+GEN_ENDPOINT = os.getenv('GEN_ENDPOINT', 'http://localhost:8384/predict')
+def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
     """
     프롬프트를 전송하고 결과를 처리하는 함수
     
@@ -14,22 +14,26 @@ def send_prompt(GEN_ENDPOINT, prompt_text, progress=gr.Progress(track_tqdm=True)
         progress: Gradio Progress 컴포넌트
     """
     
+    print(f"프롬프트 전송: {str(prompt_text)}")
     if not prompt_text.strip():
         return "프롬프트를 입력해주세요."
     
     global last_generated_file  # 생성된 파일 경로를 전역 변수로 저장
     last_generated_file = None  # 초기화    
+    data = {
+                'prompt': str(prompt_text),
+                "num_repetitions": 1,
+                "output_format": "json_file"
+            }
+    
+    print(f"프롬프트 데이터: {data}")
     try:
         # 프롬프트 전송
         progress(0, desc="프롬프트 전송 중...")
         response = requests.post(
             GEN_ENDPOINT,
             headers={'Content-Type': 'application/json'},
-            json={
-                'prompt': prompt_text,
-                "num_repetitions": 1,
-                "output_format": "json_file"
-            }
+            json=data
         )
         
         if response.status_code == 200:
@@ -63,7 +67,7 @@ def send_prompt(GEN_ENDPOINT, prompt_text, progress=gr.Progress(track_tqdm=True)
             animation_data = pose_array
             print(f'motion_data is {type(animation_data)} {pose_array.shape}')
             try:
-                motion_data_array = animation_data.reshape(120, 22, 3)
+                motion_data_array = animation_data.reshape(pose_array.shape[1], pose_array.shape[2], pose_array.shape[3])
                 print(f'motion_data_array is {motion_data_array.shape}')
             except ValueError as e:
                 print(f"Reshape error: {e}. Ensure animation_data has the correct size.")
@@ -74,7 +78,7 @@ def send_prompt(GEN_ENDPOINT, prompt_text, progress=gr.Progress(track_tqdm=True)
                 motion_dict = {
                     'motion': motion_data_array,
                     'text': ['good job'],
-                    'lengths': np.array([120]),
+                    'lengths': np.array([pose_array.shape[1]]),
                     'num_samples': 1,
                     'num_repetitions': 1
                 }
