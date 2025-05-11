@@ -23,7 +23,7 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
     data = {
                 'prompt': str(prompt_text),
                 "num_repetitions": 1,
-                "output_format": "json_file"
+                "output_format": "json_file",
             }
     
     print(f"프롬프트 데이터: {data}")
@@ -35,7 +35,7 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
             headers={'Content-Type': 'application/json'},
             json=data
         )
-        
+
         if response.status_code == 200:
             result = response.json()
             try:
@@ -63,12 +63,9 @@ def send_prompt(prompt_text, progress=gr.Progress(track_tqdm=True)):
                 trans_array.reshape(-1)
             ])
 
-            print(f'result_data = {response.status_code}, {motion_array.shape}')
             animation_data = pose_array
-            print(f'motion_data is {type(animation_data)} {pose_array.shape}')
             try:
                 motion_data_array = animation_data.reshape(pose_array.shape[1], pose_array.shape[2], pose_array.shape[3])
-                print(f'motion_data_array is {motion_data_array.shape}')
             except ValueError as e:
                 print(f"Reshape error: {e}. Ensure animation_data has the correct size.")
                 return f"애니메이션 데이터 크기가 올바르지 않습니다. 오류: {e}"

@@ -19,17 +19,7 @@ def render_humanml3d(anim_file):
     if file_ext == 'npy':
         npy = np.load(anim_file.name, allow_pickle=True)
         print(f"npy= {type(npy)}, shape={npy.shape if hasattr(npy, 'shape') else 'None'}")
-        # 디버깅을 위해 npy 데이터의 처음 20개 요소 출력
-        try:
-            if hasattr(npy, 'shape'):
-                print("npy 첫 20개 요소:", npy.flatten()[:20] if npy.size > 0 else "빈 배열")
-            elif isinstance(npy, dict):
-                keys = list(npy.keys())[:20]
-                print(f"npy 딕셔너리 키 (최대 20개): {keys}")
-            else:
-                print("npy 내용:", str(npy)[:200], "...")
-        except Exception as e:
-            print(f"npy 출력 중 오류 발생: {e}")
+
         # dict 타입 체크
         if isinstance(npy, dict) and 'motion' in npy:
             data = npy['motion']
@@ -60,10 +50,13 @@ def render_humanml3d(anim_file):
     print(f"[render_humanml3d] 데이터 형태: {data.shape if hasattr(data, 'shape') else 'None'}")
 
     # (F, J, 3) 또는 (J, 3, F) 형태 지원
+    ani_idx = 0
     if data.ndim == 4:
-        print(f"[render_humanml3d] 4D 데이터 감지, 첫번째 시퀀스 사용: {data.shape}")
-        data = data[0]
-        
+        total_ani_count = data.shape[0]
+        ani_idx = np.random.randint(0, total_ani_count)
+        print(f"[render_humanml3d] 4D 데이터 감지, {ani_idx}번째 시퀀스 사용: {data.shape}")
+        data = data[ani_idx]
+    
     if data.ndim == 3:
         print(f"[render_humanml3d] 3D 데이터 감지: {data.shape}")
         if data.shape[0] == 22 and data.shape[1] == 3:
@@ -80,7 +73,8 @@ def render_humanml3d(anim_file):
     else:
         print(f"[render_humanml3d] 지원하지 않는 데이터 차원: {data.ndim}")
         return f'<div>지원하지 않는 데이터 차원입니다: {data.ndim}</div>'
-
+              
+          
     # NaN/Inf 방지
     data = np.nan_to_num(data)
 
@@ -132,6 +126,6 @@ def render_humanml3d(anim_file):
         <iframe id="humanml3d-viewer-frame" src="{viewer_url}" style="width: 100%; height: 100%; border: none;"></iframe>
     </div>
     <p style="margin-top: 8px; color: #666; font-size: 0.9em;">
-        마우스를 사용하여 모델을 회전하고 확대/축소할 수 있습니다.
+        마우스를 사용하여 모델을 회전하고 확대/축소할 수 있습니다. {ani_idx}번째 시퀀스가 사용되었습니다.
     </p>
     '''
